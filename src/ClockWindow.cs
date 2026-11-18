@@ -211,14 +211,26 @@ namespace AppleClock
 </Track></Grid></ControlTemplate>");
             volume.ValueChanged += delegate { Data.VolumePercent = (int)Math.Round(volume.Value); percentage.Text = Data.VolumePercent + "%"; Notifications.SetVolume(Data.VolumePercent); Save(); }; panel.Children.Add(volume);
             panel.Children.Add(Text("Шаг стрелок времени, в секундах", 15, ink));
-            var stepRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 6) }; var stepInput = NumberBox(Data.TimerStepSeconds); stepInput.Width = 90; stepInput.MaxLength = 4; System.Windows.Automation.AutomationProperties.SetName(stepInput, "Шаг времени в секундах"); stepRow.Children.Add(stepInput);
+            var stepRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 6) }; var stepInput = NumberBox(Data.TimerStepSeconds); stepInput.Width = double.NaN; stepInput.Margin = new Thickness(0); stepInput.BorderThickness = new Thickness(0); stepInput.Background = Brushes.Transparent; stepInput.MaxLength = 4; System.Windows.Automation.AutomationProperties.SetName(stepInput, "Шаг времени в секундах");
+            var stepGrid = new Grid(); stepGrid.ColumnDefinitions.Add(new ColumnDefinition()); stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) }); stepGrid.Children.Add(stepInput);
+            Action<int> changeStep = delegate(int delta) { int value; if (!int.TryParse(stepInput.Text, out value)) value = Data.TimerStepSeconds; stepInput.Text = Math.Max(1, Math.Min(3600, value + delta)).ToString(); };
+            var stepArrows = new StackPanel { Margin = new Thickness(2, 3, 4, 3) }; stepArrows.Children.Add(StepArrow(true, "Увеличить шаг на 1 секунду", "+1 секунда", delegate { changeStep(1); })); stepArrows.Children.Add(StepArrow(false, "Уменьшить шаг на 1 секунду", "−1 секунда", delegate { changeStep(-1); })); Grid.SetColumn(stepArrows, 1); stepGrid.Children.Add(stepArrows);
+            stepInput.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Up || e.Key == Key.Down) { changeStep(e.Key == Key.Up ? 1 : -1); e.Handled = true; } };
+            stepRow.Children.Add(new Border { Child = stepGrid, Width = 128, Margin = new Thickness(0, 0, 10, 0), Background = card, BorderBrush = line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(9) });
             var stepMessage = Text("От 1 до 3600 секунд. Сейчас: " + Data.TimerStepSeconds + " с.", 12, secondary); stepMessage.Margin = new Thickness(0, 0, 0, 22);
             stepRow.Children.Add(Button("Применить шаг", delegate { int value; if (!int.TryParse(stepInput.Text, out value) || value < 1 || value > 3600) { stepMessage.Text = "Введите целое число от 1 до 3600 секунд."; stepMessage.Foreground = Brushes.IndianRed; return; } Data.TimerStepSeconds = value; Save(); stepMessage.Foreground = secondary; stepMessage.Text = "Шаг сохранён: " + value + " с."; })); panel.Children.Add(stepRow); panel.Children.Add(stepMessage);
             panel.Children.Add(Text("После сна истёкший таймер сработает при пробуждении. Часы не включают компьютер и не будят его. Будильник с опозданием более 10 минут пропускается. Секундомер работает до завершения приложения.", 13, secondary)); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Проверить звук", delegate { Notify("Apple Clock", "Так звучит ваш сигнал.", null); })); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Завершить приложение", delegate { Close(); })); body.Children.Add(Card(panel, new Thickness(26)));
-            body.Children.Add(Text("Apple Clock 1.0.5 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
+            body.Children.Add(Text("Apple Clock 1.0.6 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
         }
         void AddCheck(Panel parent, string label, bool value, Action<bool> change) { var check = new CheckBox { Content = label, IsChecked = value, Foreground = ink, FontSize = 15, Margin = new Thickness(0, 0, 0, 22) }; check.Checked += delegate { change(true); }; check.Unchecked += delegate { change(false); }; parent.Children.Add(check); }
         TextBox NumberBox(int value) { return new TextBox { Text = value.ToString(), Width = 60, MaxLength = 3, FontSize = 17, Padding = new Thickness(7), Background = card, Foreground = ink, BorderBrush = line, Margin = new Thickness(0, 0, 10, 0), VerticalContentAlignment = VerticalAlignment.Center }; }
+        Button StepArrow(bool up, string label, string tooltip, Action action)
+        {
+            var arrow = Button(label, action); arrow.MinHeight = 0; arrow.Height = 21; arrow.Margin = new Thickness(0, 1, 0, 1); arrow.Background = line; arrow.ToolTip = tooltip;
+            arrow.Content = new System.Windows.Shapes.Path { Data = Geometry.Parse(up ? "M2,7 L7,2 12,7" : "M2,2 L7,7 12,2"), Stroke = ink, StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, Width = 12, Height = 7, Stretch = Stretch.Uniform };
+            var frame = new FrameworkElementFactory(typeof(Border)); frame.SetValue(Border.CornerRadiusProperty, new CornerRadius(5)); frame.SetValue(Border.BackgroundProperty, line);
+            var presenter = new FrameworkElementFactory(typeof(ContentPresenter)); presenter.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center); presenter.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); frame.AppendChild(presenter); arrow.Template = new ControlTemplate(typeof(Button)) { VisualTree = frame }; return arrow;
+        }
         Window Dialog(string name, out StackPanel fields)
         {
             var dialog = new Window { Title = name, Owner = this, Width = 492, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, AllowsTransparency = true, Background = Brushes.Transparent, Foreground = ink, FontFamily = FontFamily, ShowInTaskbar = false };
@@ -250,12 +262,7 @@ namespace AppleClock
             var arrows = new StackPanel { Margin = new Thickness(2, 3, 4, 3), VerticalAlignment = VerticalAlignment.Center }; Grid.SetColumn(arrows, 1); grid.Children.Add(arrows);
             foreach (int delta in new[] { 1, -1 })
             {
-                int amount = delta; var arrow = Button(delta > 0 ? "Увеличить время" : "Уменьшить время", delegate { step(amount); });
-                arrow.MinHeight = 0; arrow.Height = 21; arrow.Margin = new Thickness(0, 1, 0, 1); arrow.Background = line;
-                arrow.ToolTip = (delta > 0 ? "+" : "−") + Data.TimerStepSeconds + " с";
-                arrow.Content = new System.Windows.Shapes.Path { Data = Geometry.Parse(delta > 0 ? "M2,7 L7,2 12,7" : "M2,2 L7,7 12,2"), Stroke = ink, StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, Width = 12, Height = 7, Stretch = Stretch.Uniform };
-                var frame = new FrameworkElementFactory(typeof(Border)); frame.SetValue(Border.CornerRadiusProperty, new CornerRadius(5)); frame.SetValue(Border.BackgroundProperty, line);
-                var presenter = new FrameworkElementFactory(typeof(ContentPresenter)); presenter.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center); presenter.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); frame.AppendChild(presenter); arrow.Template = new ControlTemplate(typeof(Button)) { VisualTree = frame }; arrows.Children.Add(arrow);
+                int amount = delta; arrows.Children.Add(StepArrow(delta > 0, delta > 0 ? "Увеличить время" : "Уменьшить время", (delta > 0 ? "+" : "−") + Data.TimerStepSeconds + " с", delegate { step(amount); }));
             }
             input.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Up || e.Key == Key.Down) { step(e.Key == Key.Up ? 1 : -1); e.Handled = true; } };
             panel.Children.Add(new Border { Child = grid, Background = card, BorderBrush = line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(9), Margin = new Thickness(0, 6, 0, 18) }); return input;

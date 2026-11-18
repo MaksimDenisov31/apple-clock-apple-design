@@ -136,7 +136,13 @@ namespace AppleClock
                 window.Page = 5; window.Build(); window.UpdateLayout();
                 var volumeControl = Descendants<Slider>(window).Single(); volumeControl.Value = 35;
                 Check(window.Data.VolumePercent == 35 && window.Notifications.VolumePercent == 35 && Storage.Load().VolumePercent == 35, "settings volume slider updates app audio and persists immediately");
-                var stepControl = Descendants<TextBox>(window).First(x => System.Windows.Automation.AutomationProperties.GetName(x) == "Шаг времени в секундах"); stepControl.Text = "25"; Click(window, "Применить шаг");
+                var stepControl = Descendants<TextBox>(window).First(x => System.Windows.Automation.AutomationProperties.GetName(x) == "Шаг времени в секундах");
+                Click(window, "Увеличить шаг на 1 секунду"); Check(stepControl.Text == "11" && window.Data.TimerStepSeconds == 10, "settings step up adds one second without saving prematurely");
+                Click(window, "Уменьшить шаг на 1 секунду"); Check(stepControl.Text == "10", "settings step down subtracts one second");
+                stepControl.Text = "1"; Click(window, "Уменьшить шаг на 1 секунду"); Check(stepControl.Text == "1", "settings arrows respect minimum step");
+                stepControl.Text = "3600"; Click(window, "Увеличить шаг на 1 секунду"); Check(stepControl.Text == "3600", "settings arrows respect maximum step");
+                stepControl.Text = ""; Click(window, "Увеличить шаг на 1 секунду"); Check(stepControl.Text == "11", "settings arrows recover an empty input");
+                stepControl.Text = "24"; Click(window, "Увеличить шаг на 1 секунду"); Click(window, "Применить шаг");
                 Check(window.Data.TimerStepSeconds == 25 && Storage.Load().TimerStepSeconds == 25, "custom timer step saves from settings");
                 stepControl.Text = "0"; Click(window, "Применить шаг"); Check(window.Data.TimerStepSeconds == 25, "invalid timer step cannot overwrite saved setting");
                 stepControl.Text = "25"; Click(window, "Применить шаг"); Screenshot(window, "docs/preview-settings.png");
