@@ -6,7 +6,7 @@ using System.Windows;
 
 [assembly: AssemblyTitle("Apple Clock — Apple Design")]
 [assembly: AssemblyProduct("Apple Clock")]
-[assembly: AssemblyVersion("1.0.2.0")]
+[assembly: AssemblyVersion("1.0.3.0")]
 namespace AppleClock
 {
     public static class Program
@@ -15,18 +15,18 @@ namespace AppleClock
         [DllImport("user32.dll")] static extern bool IsIconic(IntPtr handle);
         [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr handle, int command);
         [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr handle);
-        internal static void ActivateExisting()
+        internal static void ActivateExisting(string title = "Apple Clock")
         {
             for (int i = 0; i < 20; i++)
             {
-                IntPtr handle = FindWindow(null, "Apple Clock");
+                IntPtr handle = FindWindow(null, title);
                 if (handle != IntPtr.Zero) { ShowWindowAsync(handle, IsIconic(handle) ? 9 : 5); SetForegroundWindow(handle); return; }
                 System.Threading.Thread.Sleep(100);
             }
         }
         [STAThread] public static int Main(string[] args)
         {
-            bool test = args.Length > 0 && (args[0] == "--self-test" || args[0] == "--ui-test");
+            bool test = args.Length > 0 && (args[0] == "--self-test" || args[0] == "--ui-test" || args[0] == "--alert-test");
             try
             {
                 if (test) Storage.DirectoryPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test-results", Guid.NewGuid().ToString("N"));
@@ -39,7 +39,7 @@ namespace AppleClock
                 {
                     if (!created) { ActivateExisting(); return 0; }
                     var window = new ClockWindow(test ? State.Fresh() : Storage.Load(), test);
-                    if (test) window.Loaded += delegate { window.Dispatcher.BeginInvoke(new Action(delegate { Verification.UI(window); })); };
+                    if (test) window.Loaded += delegate { window.Dispatcher.BeginInvoke(new Action(delegate { if (args[0] == "--alert-test") Verification.AlertDuration(window); else Verification.UI(window); })); };
                     else if (Storage.LastError.Length > 0) window.Loaded += delegate { MessageBox.Show(window, Storage.LastError, "Apple Clock"); };
                     app.Run(window); return Verification.Failed ? 1 : 0;
                 }
@@ -53,4 +53,5 @@ namespace AppleClock
         }
     }
 }
+
 

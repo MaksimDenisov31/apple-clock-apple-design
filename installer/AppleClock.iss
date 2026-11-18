@@ -1,4 +1,4 @@
-﻿#define AppVersion "1.0.2"
+﻿#define AppVersion "1.0.3"
 #ifdef InstallerTest
   #define AppName "Apple Clock Test " + InstallerTest
   #define AppId "AppleClock.InstallerTest." + InstallerTest
@@ -61,6 +61,7 @@ Name: "desktopicon"; Description: "{cm:DesktopTask}"; GroupDescription: "{cm:Add
 Source: "..\AppleClock.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\AppleClock.exe.config"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\assets\SOUND-CREDITS.md"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "..\docs\preview-light.png"; DestDir: "{app}\docs"; Flags: ignoreversion
 Source: "..\docs\preview-dark.png"; DestDir: "{app}\docs"; Flags: ignoreversion
 
@@ -86,5 +87,6 @@ begin
         ShellExec('open', 'https://dotnet.microsoft.com/download/dotnet-framework/net48', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
   end;
 end;
+
 
 

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -12,6 +13,14 @@ namespace AppleClock
 {
     public static class Verification
     {
+        [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr handle, uint command);
+        static bool Above(Window upper, Window lower)
+        {
+            IntPtr below = new System.Windows.Interop.WindowInteropHelper(lower).Handle;
+            IntPtr above = new System.Windows.Interop.WindowInteropHelper(upper).Handle;
+            for (IntPtr handle = GetWindow(below, 3); handle != IntPtr.Zero; handle = GetWindow(handle, 3)) if (handle == above) return true;
+            return false;
+        }
         public static bool Failed;
         static StringBuilder report = new StringBuilder();
         static void Check(bool ok, string name) { report.AppendLine((ok ? "PASS " : "FAIL ") + name); if (!ok) Failed = true; }
@@ -64,7 +73,7 @@ namespace AppleClock
                 finally { if (dialog.IsVisible) dialog.Close(); }
             }));
         }
-        static void Screenshot(ClockWindow window, string filename)
+        static void Screenshot(Window window, string filename)
         {
             window.UpdateLayout(); var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32); bitmap.Render(window); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using (var file = File.Create(filename)) encoder.Save(file);
         }
@@ -90,15 +99,54 @@ namespace AppleClock
                 window.Data = State.Fresh(); window.Data.Alarms.Add(new Alarm { Name = "Доброе утро", Days = 31 }); window.Page = 1; window.Build(); Screenshot(window, "docs/preview-alarms.png");
                 window.Data.Dark = true; window.Page = 0; window.Build(); Screenshot(window, "docs/preview-dark.png");
                 window.Width = 880; window.Height = 640; window.Page = 4; window.Build(); window.UpdateLayout(); Screenshot(window, "docs/preview-compact.png"); Check(true, "compact focus layout");
+                window.EnableTestAlerts = true;
+                window.Page = 0; window.Build();
+                var expired = window.Data.Timers[0]; expired.Start(DateTime.UtcNow); expired.DeadlineUtc = DateTime.UtcNow.AddSeconds(-1);
+                window.Tick();
+                var alert = window.Notifications.Active.Single(); alert.UpdateLayout();
+                Check(alert.Topmost && alert.IsVisible && alert.WindowStyle == WindowStyle.None && window.Notifications.SoundActive, "timer creates persistent topmost alert with looping chime");
+                Check(expired.Remaining == 0 && !expired.Running, "expired timer waits for acknowledgement before reset");
+                alert.Close(); Check(alert.IsVisible && window.Notifications.Active.Count == 1 && window.Notifications.SoundActive, "Alt F4 and taskbar close do not dismiss or silence alert");
+                alert.WindowState = WindowState.Minimized; Check(alert.WindowState == WindowState.Normal, "alert resists minimization");
+                var otherApp = new Window { Title = "External foreground test", WindowStyle = WindowStyle.None, WindowState = WindowState.Maximized, Topmost = true, Content = new TextBlock { Text = "Another borderless full screen window" } };
+                otherApp.Show(); otherApp.Activate(); alert.RaiseAbove(); Check(Above(alert, otherApp) && alert.IsVisible && window.Notifications.SoundActive, "native Z order places alert above another topmost borderless full screen window"); otherApp.Close();
+                Screenshot(alert, "docs/preview-alert.png");
+                window.Tick(); Check(window.Notifications.Active.Count == 1, "completed timer does not create duplicate alerts");
+                var second = window.Data.Timers[1]; second.Start(DateTime.UtcNow); second.DeadlineUtc = DateTime.UtcNow.AddSeconds(-1); window.Tick();
+                Check(window.Notifications.Active.Count == 2, "simultaneous timers retain separate acknowledgements");
+                Click(alert, "Остановить"); Check(window.Notifications.Active.Count == 1 && window.Notifications.SoundActive && expired.Remaining == expired.Duration, "stop resets first timer without silencing another");
+                Click(window.Notifications.Active.Single(), "Остановить"); Check(window.Notifications.Active.Count == 0 && !window.Notifications.SoundActive && second.Remaining == second.Duration, "last stop closes alert resets timer and stops chime");
+                bool snoozed = false; window.Notify("Будильник", "Проверка", delegate { snoozed = true; }); Click(window.Notifications.Active.Single(), "Ещё 5 минут");
+                Check(snoozed && window.Notifications.Active.Count == 0 && !window.Notifications.SoundActive, "snooze acknowledges alarm and silences sound");
+                window.Data.Sound = false; window.Notify("Без звука", "Проверка", null); Check(!window.Notifications.SoundActive && window.Notifications.Active.Count == 1, "sound off preserves persistent visual alert"); Click(window.Notifications.Active.Single(), "Остановить");
+                window.Data.Sound = true; window.Notify("Завершение", "Проверка очистки", null);
             }
             catch (Exception ex) { Check(false, ex.ToString()); }
             Click(window, "Свернуть"); Check(window.WindowState == WindowState.Minimized, "minimize keeps the application open");
-            Program.ActivateExisting(); window.Dispatcher.Invoke(new Action(delegate { }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            window.Title = "Apple Clock Test " + Guid.NewGuid().ToString("N");
+            Program.ActivateExisting(window.Title); window.Dispatcher.Invoke(new Action(delegate { }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            window.Title = "Apple Clock";
             Check(window.IsVisible && window.WindowState != WindowState.Minimized, "repeated launch restores existing minimized window");
             bool closed = false; window.Closed += delegate { closed = true; };
             Click(window, "Закрыть"); Check(closed && !window.IsVisible, "red close button closes the window without hiding in tray");
+            Check(window.Notifications.Active.Count == 0 && !window.Notifications.SoundActive, "application exit closes all alerts and stops sound");
             Check(Storage.Load().Dark == window.Data.Dark, "close saves preferences");
             Directory.CreateDirectory("test-results"); File.WriteAllText("test-results/ui.txt", report.ToString());
+        }
+        public static void AlertDuration(ClockWindow window)
+        {
+            window.EnableTestAlerts = true; window.Notify("Проверка длительности", "65 секунд без автоматического отключения", null);
+            var popup = window.Notifications.Active.Single();
+            var duration = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(65) };
+            duration.Tick += delegate {
+                duration.Stop();
+                try {
+                    Check(popup.IsVisible && popup.Topmost && window.Notifications.SoundActive, "alert and looping audio remain active after 65 seconds");
+                    Click(popup, "Остановить"); Check(!window.Notifications.SoundActive && window.Notifications.Active.Count == 0, "explicit stop ends persistent alert");
+                } catch (Exception ex) { Check(false, ex.ToString()); }
+                Directory.CreateDirectory("test-results"); File.WriteAllText("test-results/alert-duration.txt", report.ToString()); window.Close();
+            };
+            duration.Start();
         }
     }
 }

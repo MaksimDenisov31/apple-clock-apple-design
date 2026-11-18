@@ -31,6 +31,9 @@ namespace AppleClock
         public State Data;
         public int Page;
         public bool Testing;
+        internal bool EnableTestAlerts;
+        internal readonly AlarmNotifications Notifications;
+        readonly HashSet<Countdown> ringingTimers = new HashSet<Countdown>();
         Grid shell;
         StackPanel navigation, body;
         TextBlock title, subtitle, localTime;
@@ -58,10 +61,11 @@ namespace AppleClock
             var chrome = new System.Windows.Shell.WindowChrome { CaptionHeight = 0, ResizeBorderThickness = new Thickness(6), CornerRadius = new CornerRadius(12), GlassFrameThickness = new Thickness(0) };
             System.Windows.Shell.WindowChrome.SetWindowChrome(this, chrome);
             using (var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("AppleClock.Icon")) Icon = System.Windows.Media.Imaging.BitmapFrame.Create(stream, System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+            Notifications = new AlarmNotifications(testing);
             Build();
             ticker.Tick += delegate { Tick(); }; ticker.Start();
             Closing += delegate { Save(); };
-            Closed += delegate { ticker.Stop(); };
+            Closed += delegate { ticker.Stop(); Notifications.Dispose(); };
             PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Escape && WindowState == WindowState.Maximized) WindowState = WindowState.Normal; if (e.Key == Key.F11) Maximize(); };
         }
         Brush ColorBrush(string value) { return (Brush)new BrushConverter().ConvertFromString(value); }
@@ -117,7 +121,11 @@ namespace AppleClock
         public void Tick()
         {
             DateTime now = DateTime.UtcNow; bool changed = false;
-            foreach (Countdown t in Data.Timers.ToArray()) if (t.Tick(now)) { Notify(t.Name, "Время вышло", null); changed = true; }
+            foreach (Countdown t in Data.Timers.ToArray()) if (t.Tick(now))
+            {
+                if (!Testing || EnableTestAlerts) ringingTimers.Add(t);
+                Notify(t.Name, "Время вышло", null, delegate { ringingTimers.Remove(t); t.Reset(); Save(); Refresh(); }); changed = true;
+            }
             foreach (Alarm a in Data.Alarms.ToArray()) if (a.Tick(now)) { Alarm captured = a; Notify(a.Name, a.Hour.ToString("00") + ":" + a.Minute.ToString("00"), delegate { captured.Enabled = true; captured.NextUtc = DateTime.UtcNow.AddMinutes(5); Save(); Build(); }); changed = true; }
             string day = DateTime.Now.ToString("yyyy-MM-dd"); if (Data.FocusDay != day) { Data.FocusDay = day; Data.FocusCompleted = 0; changed = true; }
             if (Data.Focus.Tick(now)) { bool wasBreak = Data.OnBreak; if (!wasBreak) Data.FocusCompleted++; Data.OnBreak = !wasBreak; Data.Focus.Duration = (Data.OnBreak ? Data.BreakMinutes : Data.FocusMinutes) * 60; Data.Focus.Reset(); Notify("Фокусировка", wasBreak ? "Перерыв завершён. Можно вернуться к делу." : "Отличная работа. Время сделать перерыв.", null); changed = true; }
@@ -142,7 +150,7 @@ namespace AppleClock
                 var ringGrid = new Grid { Width = 242, Height = 242, Margin = new Thickness(0, 20, 0, 20) }; var ring = new Dial { Accent = orange, Track = line }; ringGrid.Children.Add(ring);
                 var center = new StackPanel { VerticalAlignment = VerticalAlignment.Center }; var time = Text("", 38, ink); time.FontWeight = FontWeights.Light; time.HorizontalAlignment = HorizontalAlignment.Center; center.Children.Add(time); var status = Text("", 12, secondary); status.HorizontalAlignment = HorizontalAlignment.Center; status.Margin = new Thickness(0, 8, 0, 0); center.Children.Add(status); ringGrid.Children.Add(center); stack.Children.Add(ringGrid);
                 var controls = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center }; controls.Children.Add(Button("Сбросить", delegate { t.Reset(); Save(); Refresh(); })); var toggle = Button("", delegate { if (t.Running) t.Pause(DateTime.UtcNow); else t.Start(DateTime.UtcNow); Save(); Refresh(); }, true); controls.Children.Add(toggle); stack.Children.Add(controls);
-                refresh.Add(delegate { time.Text = Duration(t.Remaining); status.Text = t.Running ? "Осталось" : (t.Remaining <= 0 ? "Время вышло" : "Готов к запуску"); toggle.Content = t.Running ? "Пауза" : "Старт"; ring.Progress = t.Remaining / t.Duration; ring.InvalidateVisual(); }); cards.Children.Add(Card(stack, new Thickness(24)));
+                refresh.Add(delegate { time.Text = Duration(t.Remaining); status.Text = t.Running ? "Осталось" : (t.Remaining <= 0 ? "Время вышло" : "Готов к запуску"); toggle.Content = t.Running ? "Пауза" : "Старт"; controls.IsEnabled = !ringingTimers.Contains(t); edit.IsEnabled = !ringingTimers.Contains(t); ring.Progress = t.Remaining / t.Duration; ring.InvalidateVisual(); }); cards.Children.Add(Card(stack, new Thickness(24)));
             }
             if (Data.Timers.Count == 0) body.Children.Add(Text("Добавьте таймер или выберите время быстрого старта.", 16, secondary));
             body.Children.Add(Text("Таймер продолжит отсчёт, пока вы занимаетесь своими делами.", 12, secondary));
@@ -191,7 +199,7 @@ namespace AppleClock
             AddCheck(panel, "Тёмная тема", Data.Dark, delegate(bool value) { Data.Dark = value; Save(); Build(); });
             AddCheck(panel, "Звуковой сигнал таймеров и будильников", Data.Sound, delegate(bool value) { Data.Sound = value; Save(); });
             panel.Children.Add(Text("После сна истёкший таймер сработает при пробуждении. Часы не включают компьютер и не будят его. Будильник с опозданием более 10 минут пропускается. Секундомер работает до завершения приложения.", 13, secondary)); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Проверить звук", delegate { Notify("Apple Clock", "Так звучит ваш сигнал.", null); })); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Завершить приложение", delegate { Close(); })); body.Children.Add(Card(panel, new Thickness(26)));
-            body.Children.Add(Text("Apple Clock 1.0.2 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
+            body.Children.Add(Text("Apple Clock 1.0.3 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
         }
         void AddCheck(Panel parent, string label, bool value, Action<bool> change) { var check = new CheckBox { Content = label, IsChecked = value, Foreground = ink, FontSize = 15, Margin = new Thickness(0, 0, 0, 22) }; check.Checked += delegate { change(true); }; check.Unchecked += delegate { change(false); }; parent.Children.Add(check); }
         TextBox NumberBox(int value) { return new TextBox { Text = value.ToString(), Width = 60, MaxLength = 3, FontSize = 17, Padding = new Thickness(7), Background = card, Foreground = ink, BorderBrush = line, Margin = new Thickness(0, 0, 10, 0), VerticalContentAlignment = VerticalAlignment.Center }; }
@@ -216,13 +224,12 @@ namespace AppleClock
         {
             StackPanel fields; var dialog = Dialog("Добавить город", out fields); var search = Field(fields, "Поиск города", ""); var list = new ListBox { Height = 270, Background = card, Foreground = ink, BorderBrush = line, FontSize = 18, Margin = new Thickness(0, 0, 0, 20), DisplayMemberPath = "" }; Action populate = delegate { list.Items.Clear(); foreach (City c in City.Catalog.Where(x => x.Name.IndexOf(search.Text, StringComparison.CurrentCultureIgnoreCase) >= 0 && !Data.Cities.Any(y => y.Zone == x.Zone))) list.Items.Add(c.Name); if (list.Items.Count > 0) list.SelectedIndex = 0; }; search.TextChanged += delegate { populate(); }; populate(); fields.Children.Add(list); fields.Children.Add(Button("Добавить", delegate { if (list.SelectedItem == null) return; Data.Cities.Add(City.Catalog.First(x => x.Name == (string)list.SelectedItem)); Save(); dialog.Close(); Build(); }, true)); dialog.ShowDialog();
         }
-        void Notify(string name, string message, Action snooze)
+        internal void Notify(string name, string message, Action snooze, Action stopped = null)
         {
-            if (Testing) return;
-            var dialog = new Window { Title = "Apple Clock · " + name, Width = 420, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterScreen, Topmost = true, Background = bg, Foreground = ink, ResizeMode = ResizeMode.NoResize };
-            var panel = new StackPanel { Margin = new Thickness(28) }; panel.Children.Add(Text(name, 27, ink)); panel.Children.Add(new Border { Height = 12 }); panel.Children.Add(Text(message, 17, secondary)); panel.Children.Add(new Border { Height = 26 }); var buttons = new StackPanel { Orientation = Orientation.Horizontal }; buttons.Children.Add(Button("Остановить", delegate { dialog.Close(); }, true)); if (snooze != null) buttons.Children.Add(Button("Ещё 5 минут", delegate { snooze(); dialog.Close(); })); panel.Children.Add(buttons); dialog.Content = panel;
-            var sound = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) }; int count = 0; Action play = delegate { if (Data.Sound) System.Media.SystemSounds.Exclamation.Play(); }; play(); sound.Tick += delegate { play(); if (++count >= 30) sound.Stop(); }; sound.Start(); dialog.Closed += delegate { sound.Stop(); }; dialog.Show();
+            if (Testing && !EnableTestAlerts) return;
+            Notifications.Show(name, message, Data.Sound, bg, ink, secondary, Icon, Button, stopped, snooze);
         }
     }
 }
+
 
