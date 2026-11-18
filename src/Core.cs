@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
@@ -60,7 +60,7 @@ namespace AppleClock
     }
     public class State
     {
-        public bool Dark, Background = true, Sound = true;
+        public bool Dark, Sound = true;
         public int FocusMinutes = 25, BreakMinutes = 5, FocusCompleted;
         public string FocusDay = "", FocusTask = "";
         public bool OnBreak;

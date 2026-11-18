@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -8,7 +8,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
-using Forms = System.Windows.Forms;
 
 namespace AppleClock
 {
@@ -31,7 +30,7 @@ namespace AppleClock
     {
         public State Data;
         public int Page;
-        public bool Testing, Quitting;
+        public bool Testing;
         Grid shell;
         StackPanel navigation, body;
         TextBlock title, subtitle, localTime;
@@ -39,7 +38,6 @@ namespace AppleClock
         readonly Stopwatch stopwatch = new Stopwatch();
         readonly List<TimeSpan> laps = new List<TimeSpan>();
         readonly DispatcherTimer ticker = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
-        Forms.NotifyIcon tray;
         DateTime lastSave = DateTime.UtcNow;
         Brush bg, side, card, ink, secondary, line;
         readonly Brush orange = new SolidColorBrush(Color.FromRgb(255, 149, 0));
@@ -61,10 +59,9 @@ namespace AppleClock
             System.Windows.Shell.WindowChrome.SetWindowChrome(this, chrome);
             using (var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("AppleClock.Icon")) Icon = System.Windows.Media.Imaging.BitmapFrame.Create(stream, System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
             Build();
-            if (!testing) SetupTray();
             ticker.Tick += delegate { Tick(); }; ticker.Start();
-            Closing += delegate(object sender, System.ComponentModel.CancelEventArgs e) { if (!Quitting && Data.Background && !Testing) { e.Cancel = true; Hide(); tray.ShowBalloonTip(2500, "Apple Clock", "Часы работают в фоне. Открыть или завершить — через значок в трее.", Forms.ToolTipIcon.Info); } Save(); };
-            Closed += delegate { ticker.Stop(); if (tray != null) tray.Dispose(); };
+            Closing += delegate { Save(); };
+            Closed += delegate { ticker.Stop(); };
             PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Escape && WindowState == WindowState.Maximized) WindowState = WindowState.Normal; if (e.Key == Key.F11) Maximize(); };
         }
         Brush ColorBrush(string value) { return (Brush)new BrushConverter().ConvertFromString(value); }
@@ -117,13 +114,6 @@ namespace AppleClock
         }
         void Maximize() { WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized; }
         void Save() { if (!Storage.Save(Data) && !Testing) subtitle.Text = Storage.LastError; }
-        void SetupTray()
-        {
-            tray = new Forms.NotifyIcon { Text = "Apple Clock", Visible = true };
-            using (var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("AppleClock.Icon")) tray.Icon = new System.Drawing.Icon(stream);
-            var menu = new Forms.ContextMenuStrip(); menu.Items.Add("Открыть часы", null, delegate { ShowWindow(); }); menu.Items.Add("Завершить", null, delegate { Quitting = true; Close(); }); tray.ContextMenuStrip = menu; tray.DoubleClick += delegate { ShowWindow(); };
-        }
-        void ShowWindow() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); }
         public void Tick()
         {
             DateTime now = DateTime.UtcNow; bool changed = false;
@@ -165,7 +155,7 @@ namespace AppleClock
                 var row = new DockPanel(); var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center }; var enabled = new CheckBox { Content = "Включён", IsChecked = a.Enabled, Foreground = ink, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 20, 0) }; enabled.Checked += delegate { a.Enabled = true; a.Schedule(DateTime.Now); Save(); }; enabled.Unchecked += delegate { a.Enabled = false; Save(); }; actions.Children.Add(enabled); actions.Children.Add(Button("Изменить", delegate { EditAlarm(a); })); DockPanel.SetDock(actions, Dock.Right); row.Children.Add(actions);
                 var info = new StackPanel(); var time = Text(a.Hour.ToString("00") + ":" + a.Minute.ToString("00"), 48, a.Enabled ? ink : secondary); time.FontWeight = FontWeights.Light; info.Children.Add(time); info.Children.Add(Text(a.Name + " · " + DaysText(a.Days), 14, secondary)); row.Children.Add(info); body.Children.Add(Card(row, new Thickness(24, 18, 20, 18)));
             }
-            body.Children.Add(Text("Будильники звучат, когда приложение открыто или работает в трее. Компьютер должен бодрствовать.", 12, secondary));
+            body.Children.Add(Text("Будильники звучат, пока приложение открыто. Компьютер должен бодрствовать.", 12, secondary));
         }
         string DaysText(int days) { if (days == 0) return "Один раз"; if (days == 127) return "Каждый день"; string[] names = { "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс" }; return string.Join(", ", names.Where((s, i) => (days & (1 << i)) != 0)); }
         void StopwatchPage()
@@ -200,9 +190,8 @@ namespace AppleClock
             var panel = new StackPanel(); panel.Children.Add(Text("Оформление и работа", 21, ink)); panel.Children.Add(new Border { Height = 18 });
             AddCheck(panel, "Тёмная тема", Data.Dark, delegate(bool value) { Data.Dark = value; Save(); Build(); });
             AddCheck(panel, "Звуковой сигнал таймеров и будильников", Data.Sound, delegate(bool value) { Data.Sound = value; Save(); });
-            AddCheck(panel, "Продолжать работу в трее после закрытия окна", Data.Background, delegate(bool value) { Data.Background = value; Save(); });
-            panel.Children.Add(Text("После сна истёкший таймер сработает при пробуждении. Часы не включают компьютер и не будят его. Будильник с опозданием более 10 минут пропускается. Секундомер работает до завершения приложения.", 13, secondary)); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Проверить звук", delegate { Notify("Apple Clock", "Так звучит ваш сигнал.", null); })); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Завершить приложение", delegate { Quitting = true; Close(); })); body.Children.Add(Card(panel, new Thickness(26)));
-            body.Children.Add(Text("Apple Clock 1.0.0 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
+            panel.Children.Add(Text("После сна истёкший таймер сработает при пробуждении. Часы не включают компьютер и не будят его. Будильник с опозданием более 10 минут пропускается. Секундомер работает до завершения приложения.", 13, secondary)); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Проверить звук", delegate { Notify("Apple Clock", "Так звучит ваш сигнал.", null); })); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Завершить приложение", delegate { Close(); })); body.Children.Add(Card(panel, new Thickness(26)));
+            body.Children.Add(Text("Apple Clock 1.0.1 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
         }
         void AddCheck(Panel parent, string label, bool value, Action<bool> change) { var check = new CheckBox { Content = label, IsChecked = value, Foreground = ink, FontSize = 15, Margin = new Thickness(0, 0, 0, 22) }; check.Checked += delegate { change(true); }; check.Unchecked += delegate { change(false); }; parent.Children.Add(check); }
         TextBox NumberBox(int value) { return new TextBox { Text = value.ToString(), Width = 60, MaxLength = 3, FontSize = 17, Padding = new Thickness(7), Background = card, Foreground = ink, BorderBrush = line, Margin = new Thickness(0, 0, 10, 0), VerticalContentAlignment = VerticalAlignment.Center }; }

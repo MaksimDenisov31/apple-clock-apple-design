@@ -36,7 +36,10 @@ namespace AppleClock
                 var ny = City.Catalog.First(c => c.Name == "Нью-Йорк"); Check(ny.At(new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Utc)).Hour == 8 && ny.At(new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc)).Hour == 7, "world clock DST");
                 foreach (City c in City.Catalog) c.At(now); Check(true, "all city time zones available");
                 State s = State.Fresh(); s.Dark = true; s.FocusTask = "Проверка — часы"; s.Timers[0].Start(now); s.Alarms.Add(a); Check(Storage.Save(s), "atomic initial save"); s.FocusCompleted = 3; Check(Storage.Save(s), "atomic replacement save"); var loaded = Storage.Load(); Check(loaded.Dark && loaded.FocusTask == s.FocusTask && loaded.FocusCompleted == 3 && loaded.Timers[0].Running && loaded.Timers[0].DeadlineUtc == s.Timers[0].DeadlineUtc && loaded.Alarms.Count == 1, "restore settings timers alarms UTF-8");
-                File.WriteAllText(Path.Combine(Storage.DirectoryPath, "settings.xml"), "broken"); Check(Storage.Load().Timers.Count == 2 && Storage.LastError.Length > 0, "corrupt settings handled");
+                string settingsPath = Path.Combine(Storage.DirectoryPath, "settings.xml");
+                File.WriteAllText(settingsPath, File.ReadAllText(settingsPath).Replace("</State>", "<Background>true</Background></State>"));
+                Check(Storage.Load().Dark && Storage.LastError.Length == 0 && typeof(State).GetField("Background") == null, "legacy tray setting ignored while preferences are restored");
+                File.WriteAllText(settingsPath, "broken"); Check(Storage.Load().Timers.Count == 2 && Storage.LastError.Length > 0, "corrupt settings handled");
                 Check(ClockWindow.Duration(3661) == "01:01:01", "duration formatting");
                 double seconds;
                 Check(ClockWindow.ParseDuration("99:59:59", out seconds) && seconds == 359999 && ClockWindow.Duration(seconds) == "99:59:59", "timer duration supports 99 hours");
@@ -47,7 +50,7 @@ namespace AppleClock
         }
         static Button FindButton(DependencyObject root, string label)
         {
-            var button = root as Button; if (button != null && button.Content as string == label) return button;
+            var button = root as Button; if (button != null && (button.Content as string == label || System.Windows.Automation.AutomationProperties.GetName(button) == label)) return button;
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { Button found = FindButton(VisualTreeHelper.GetChild(root, i), label); if (found != null) return found; } return null;
         }
         static void Click(Window window, string label) { window.UpdateLayout(); var b = FindButton(window, label); if (b == null) throw new Exception("Button not found: " + label); b.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); window.UpdateLayout(); }
@@ -89,7 +92,13 @@ namespace AppleClock
                 window.Width = 880; window.Height = 640; window.Page = 4; window.Build(); window.UpdateLayout(); Screenshot(window, "docs/preview-compact.png"); Check(true, "compact focus layout");
             }
             catch (Exception ex) { Check(false, ex.ToString()); }
-            Directory.CreateDirectory("test-results"); File.WriteAllText("test-results/ui.txt", report.ToString()); window.Quitting = true; window.Close();
+            Click(window, "Свернуть"); Check(window.WindowState == WindowState.Minimized, "minimize keeps the application open");
+            Program.ActivateExisting(); window.Dispatcher.Invoke(new Action(delegate { }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            Check(window.IsVisible && window.WindowState != WindowState.Minimized, "repeated launch restores existing minimized window");
+            bool closed = false; window.Closed += delegate { closed = true; };
+            Click(window, "Закрыть"); Check(closed && !window.IsVisible, "red close button closes the window without hiding in tray");
+            Check(Storage.Load().Dark == window.Data.Dark, "close saves preferences");
+            Directory.CreateDirectory("test-results"); File.WriteAllText("test-results/ui.txt", report.ToString());
         }
     }
 }
