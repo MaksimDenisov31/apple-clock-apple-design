@@ -48,11 +48,15 @@ namespace AppleClock
                 foreach (City c in City.Catalog) c.At(now); Check(true, "all city time zones available");
                 State s = State.Fresh(); s.Dark = true; s.VolumePercent = 37; s.TimerStepSeconds = 25; s.FocusTask = "Проверка — часы"; s.Timers[0].Start(now); s.Alarms.Add(a); Check(Storage.Save(s), "atomic initial save"); s.FocusCompleted = 3; Check(Storage.Save(s), "atomic replacement save"); var loaded = Storage.Load(); Check(loaded.Dark && loaded.FocusTask == s.FocusTask && loaded.FocusCompleted == 3 && loaded.Timers[0].Running && loaded.Timers[0].DeadlineUtc == s.Timers[0].DeadlineUtc && loaded.Alarms.Count == 1, "restore settings timers alarms UTF-8");
                 Check(loaded.VolumePercent == 37 && loaded.TimerStepSeconds == 25, "volume and custom step persist");
+                s.WindowWidth = 1110; s.WindowHeight = 740; s.WindowMaximized = true; Check(Storage.Save(s), "save window geometry"); loaded = Storage.Load();
+                Check(loaded.WindowWidth == 1110 && loaded.WindowHeight == 740 && loaded.WindowMaximized, "window dimensions and maximized state persist");
                 string settingsPath = Path.Combine(Storage.DirectoryPath, "settings.xml");
                 File.WriteAllText(settingsPath, File.ReadAllText(settingsPath).Replace("</State>", "<Background>true</Background></State>"));
                 Check(Storage.Load().Dark && Storage.LastError.Length == 0 && typeof(State).GetField("Background") == null, "legacy tray setting ignored while preferences are restored");
                 File.WriteAllText(settingsPath, File.ReadAllText(settingsPath).Replace("<VolumePercent>37</VolumePercent>", "").Replace("<TimerStepSeconds>25</TimerStepSeconds>", ""));
                 loaded = Storage.Load(); Check(loaded.VolumePercent == 100 && loaded.TimerStepSeconds == 10 && loaded.Dark, "older settings receive volume and step defaults without losing preferences");
+                File.WriteAllText(settingsPath, File.ReadAllText(settingsPath).Replace("<WindowWidth>1110</WindowWidth>", "").Replace("<WindowHeight>740</WindowHeight>", "").Replace("<WindowMaximized>true</WindowMaximized>", ""));
+                loaded = Storage.Load(); Check(loaded.WindowWidth == 1010 && loaded.WindowHeight == 790 && !loaded.WindowMaximized && loaded.Dark, "older settings use compact default size");
                 File.WriteAllText(settingsPath, "broken"); Check(Storage.Load().Timers.Count == 2 && Storage.LastError.Length > 0, "corrupt settings handled");
                 Check(ClockWindow.Duration(3661) == "01:01:01", "duration formatting");
                 double seconds;
@@ -98,6 +102,9 @@ namespace AppleClock
             try
             {
                 Directory.CreateDirectory("docs"); window.UpdateLayout(); Screenshot(window, "docs/preview-light.png");
+                Check(window.Width == 1010, "default window width removes unused space");
+                var initialCards = Descendants<WrapPanel>(window).First().Children.OfType<Border>().Take(2).ToArray();
+                Check(initialCards.Length == 2 && Math.Abs(initialCards[0].TranslatePoint(new Point(), window).Y - initialCards[1].TranslatePoint(new Point(), window).Y) < 1, "compact default width still fits two timer cards");
                 Click(window, "Старт"); Check(window.Data.Timers[0].Running, "UI timer start"); Click(window, "Пауза"); Check(!window.Data.Timers[0].Running, "UI timer pause");
                 Click(window, "5 мин"); Check(window.Data.Timers.Count == 3 && window.Data.Timers[2].Running, "UI quick timer");
                 InDialog(window, delegate(Window d, StackPanel p) {
@@ -201,10 +208,21 @@ namespace AppleClock
             Program.ActivateExisting(window.Title); window.Dispatcher.Invoke(new Action(delegate { }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
             window.Title = "Apple Clock";
             Check(window.IsVisible && window.WindowState != WindowState.Minimized, "repeated launch restores existing minimized window");
+            window.Width = 1040; window.Height = 710; window.UpdateLayout(); window.RememberWindowSize();
+            window.WindowState = WindowState.Maximized; window.UpdateLayout(); window.RememberWindowSize();
+            Check(window.Data.WindowMaximized && Math.Abs(window.Data.WindowWidth - 1040) < 1 && Math.Abs(window.Data.WindowHeight - 710) < 1, "maximize retains normal restore dimensions");
+            window.WindowState = WindowState.Minimized; window.RememberWindowSize();
+            Check(window.Data.WindowMaximized && Math.Abs(window.Data.WindowWidth - 1040) < 1, "minimize does not overwrite saved maximized state or restore size");
+            window.WindowState = WindowState.Normal; window.Dispatcher.Invoke(new Action(delegate { }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            // Restoring a minimized maximized window first returns it to maximized mode.
+            window.WindowState = WindowState.Normal; window.Dispatcher.Invoke(new Action(delegate { }), System.Windows.Threading.DispatcherPriority.ApplicationIdle); window.UpdateLayout(); window.RememberWindowSize();
             bool closed = false; window.Closed += delegate { closed = true; };
             Click(window, "Закрыть"); Check(closed && !window.IsVisible, "red close button closes the window without hiding in tray");
             Check(window.Notifications.Active.Count == 0 && !window.Notifications.SoundActive, "application exit closes all alerts and stops sound");
             Check(Storage.Load().Dark == window.Data.Dark, "close saves preferences");
+            State geometry = Storage.Load(); Check(Math.Abs(geometry.WindowWidth - 1040) < 1 && Math.Abs(geometry.WindowHeight - 710) < 1 && !geometry.WindowMaximized, "close saves resized normal dimensions");
+            var reopened = new ClockWindow(geometry, true);
+            Check(Math.Abs(reopened.Width - 1040) < 1 && Math.Abs(reopened.Height - 710) < 1, "new application window restores previous custom dimensions"); reopened.Close();
             Directory.CreateDirectory("test-results"); File.WriteAllText("test-results/ui.txt", report.ToString());
         }
         public static void AlertDuration(ClockWindow window)

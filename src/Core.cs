@@ -62,6 +62,8 @@ namespace AppleClock
     {
         public bool Dark, Sound = true;
         public int VolumePercent = 100, TimerStepSeconds = 10;
+        public double WindowWidth = 1010, WindowHeight = 790;
+        public bool WindowMaximized;
         public int FocusMinutes = 25, BreakMinutes = 5, FocusCompleted;
         public string FocusDay = "", FocusTask = "";
         public bool OnBreak;
@@ -84,6 +86,8 @@ namespace AppleClock
         }
         static void Validate(State s)
         {
+            if (double.IsNaN(s.WindowWidth) || double.IsInfinity(s.WindowWidth) || s.WindowWidth < 880 || s.WindowWidth > 10000) s.WindowWidth = 1010;
+            if (double.IsNaN(s.WindowHeight) || double.IsInfinity(s.WindowHeight) || s.WindowHeight < 640 || s.WindowHeight > 10000) s.WindowHeight = 790;
             if (s.VolumePercent < 0 || s.VolumePercent > 100 || s.TimerStepSeconds < 1 || s.TimerStepSeconds > 3600) throw new InvalidDataException("Некорректная громкость или шаг времени");
             if (s.Timers == null || s.Alarms == null || s.Cities == null || s.Focus == null || s.FocusMinutes < 1 || s.FocusMinutes > 180 || s.BreakMinutes < 1 || s.BreakMinutes > 60) throw new InvalidDataException("Некорректные настройки");
             foreach (Countdown t in s.Timers) if (t.Duration < 1 || t.Duration > 359999 || double.IsNaN(t.Duration) || double.IsNaN(t.Remaining) || t.Remaining < 0 || t.Remaining > t.Duration) throw new InvalidDataException("Некорректный таймер");

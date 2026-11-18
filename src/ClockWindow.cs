@@ -41,6 +41,7 @@ namespace AppleClock
         readonly Stopwatch stopwatch = new Stopwatch();
         readonly List<TimeSpan> laps = new List<TimeSpan>();
         readonly DispatcherTimer ticker = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
+        readonly DispatcherTimer sizeSave = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         DateTime lastSave = DateTime.UtcNow;
         Brush bg, side, card, ink, secondary, line;
         readonly Brush orange = new SolidColorBrush(Color.FromRgb(255, 149, 0));
@@ -55,7 +56,10 @@ namespace AppleClock
             "M8,1 L12,1 13,4 16,4 19,8 17,10 19,13 16,17 13,16 12,19 8,19 7,16 4,17 1,13 3,10 1,8 4,4 7,4 Z M10,6 C4,6 4,14 10,14 C16,14 16,6 10,6" };
         public ClockWindow(State data, bool testing)
         {
-            Data = data; Testing = testing; Title = "Apple Clock"; Width = 1180; Height = 790; MinWidth = 880; MinHeight = 640;
+            Data = data; Testing = testing; Title = "Apple Clock"; MinWidth = 880; MinHeight = 640;
+            Rect workArea = SystemParameters.WorkArea;
+            Width = Math.Max(MinWidth, Math.Min(Data.WindowWidth, Math.Max(MinWidth, workArea.Width)));
+            Height = Math.Max(MinHeight, Math.Min(Data.WindowHeight, Math.Max(MinHeight, workArea.Height)));
             WindowStartupLocation = WindowStartupLocation.CenterScreen; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.CanResize;
             FontFamily = new FontFamily("Segoe UI"); FontSize = 14;
             var chrome = new System.Windows.Shell.WindowChrome { CaptionHeight = 0, ResizeBorderThickness = new Thickness(6), CornerRadius = new CornerRadius(12), GlassFrameThickness = new Thickness(0) };
@@ -64,9 +68,13 @@ namespace AppleClock
             Notifications = new AlarmNotifications(testing);
             Notifications.SetVolume(Data.VolumePercent);
             Build();
+            if (Data.WindowMaximized) WindowState = WindowState.Maximized;
             ticker.Tick += delegate { Tick(); }; ticker.Start();
-            Closing += delegate { Save(); };
-            Closed += delegate { ticker.Stop(); Notifications.Dispose(); };
+            sizeSave.Tick += delegate { sizeSave.Stop(); RememberWindowSize(); Save(); };
+            SizeChanged += delegate { if (IsLoaded && WindowState == WindowState.Normal) { RememberWindowSize(); ScheduleSizeSave(); } };
+            StateChanged += delegate { if (IsLoaded && WindowState != WindowState.Minimized) { if (WindowState == WindowState.Maximized) RememberWindowSize(); ScheduleSizeSave(); } };
+            Closing += delegate { sizeSave.Stop(); RememberWindowSize(); Save(); };
+            Closed += delegate { ticker.Stop(); sizeSave.Stop(); Notifications.Dispose(); };
             PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Escape && WindowState == WindowState.Maximized) WindowState = WindowState.Normal; if (e.Key == Key.F11) Maximize(); };
         }
         Brush ColorBrush(string value) { return (Brush)new BrushConverter().ConvertFromString(value); }
@@ -138,6 +146,14 @@ namespace AppleClock
             Refresh();
         }
         void Maximize() { WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized; }
+        void ScheduleSizeSave() { sizeSave.Stop(); sizeSave.Start(); }
+        internal void RememberWindowSize()
+        {
+            if (!IsLoaded || WindowState == WindowState.Minimized) return;
+            Rect bounds = WindowState == WindowState.Maximized ? RestoreBounds : new Rect(0, 0, ActualWidth, ActualHeight);
+            if (!bounds.IsEmpty && bounds.Width >= MinWidth && bounds.Height >= MinHeight) { Data.WindowWidth = bounds.Width; Data.WindowHeight = bounds.Height; }
+            Data.WindowMaximized = WindowState == WindowState.Maximized;
+        }
         void Save() { if (!Storage.Save(Data) && !Testing) subtitle.Text = Storage.LastError; }
         public void Tick()
         {
@@ -239,7 +255,7 @@ namespace AppleClock
             var stepMessage = Text("От 1 до 3600 секунд. Сейчас: " + Data.TimerStepSeconds + " с.", 12, secondary); stepMessage.Margin = new Thickness(0, 0, 0, 22);
             stepRow.Children.Add(Button("Применить шаг", delegate { int value; if (!int.TryParse(stepInput.Text, out value) || value < 1 || value > 3600) { stepMessage.Text = "Введите целое число от 1 до 3600 секунд."; stepMessage.Foreground = Brushes.IndianRed; return; } Data.TimerStepSeconds = value; Save(); stepMessage.Foreground = secondary; stepMessage.Text = "Шаг сохранён: " + value + " с."; })); panel.Children.Add(stepRow); panel.Children.Add(stepMessage);
             panel.Children.Add(Text("После сна истёкший таймер сработает при пробуждении. Часы не включают компьютер и не будят его. Будильник с опозданием более 10 минут пропускается. Секундомер работает до завершения приложения.", 13, secondary)); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Проверить звук", delegate { Notify("Apple Clock", "Так звучит ваш сигнал.", null); })); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Завершить приложение", delegate { Close(); })); body.Children.Add(Card(panel, new Thickness(26)));
-            body.Children.Add(Text("Apple Clock 1.0.7 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
+            body.Children.Add(Text("Apple Clock 1.0.8 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
         }
         void AddCheck(Panel parent, string label, bool value, Action<bool> change) { var check = new CheckBox { Content = label, IsChecked = value, Foreground = ink, FontSize = 15, Margin = new Thickness(0, 0, 0, 22) }; check.Checked += delegate { change(true); }; check.Unchecked += delegate { change(false); }; parent.Children.Add(check); }
         TextBox NumberBox(int value) { return new TextBox { Text = value.ToString(), Width = 60, MaxLength = 3, FontSize = 17, Padding = new Thickness(7), Background = card, Foreground = ink, BorderBrush = line, Margin = new Thickness(0, 0, 10, 0), VerticalContentAlignment = VerticalAlignment.Center }; }
