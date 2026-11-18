@@ -6,13 +6,13 @@ $images = @()
 foreach ($size in $sizes) {
     $bitmap = New-Object Drawing.Bitmap($size, $size)
     $graphics = [Drawing.Graphics]::FromImage($bitmap)
+    $graphics.Clear([Drawing.Color]::Transparent)
     $graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $graphics.ScaleTransform($size / 256.0, $size / 256.0)
-    $path = New-Object Drawing.Drawing2D.GraphicsPath
-    $path.AddArc(8,8,64,64,180,90); $path.AddArc(184,8,64,64,270,90)
-    $path.AddArc(184,184,64,64,0,90); $path.AddArc(8,184,64,64,90,90); $path.CloseFigure()
-    $face = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(30,30,33))
-    $graphics.FillPath($face,$path)
+    # Enlarge the existing clock face from 200 to 240 px; keep its surroundings transparent.
+    $graphics.TranslateTransform(128,128)
+    $graphics.ScaleTransform(1.2,1.2)
+    $graphics.TranslateTransform(-128,-128)
     $graphics.FillEllipse([Drawing.Brushes]::White,28,28,200,200)
     $pen = New-Object Drawing.Pen([Drawing.Color]::FromArgb(30,30,33),6)
     for ($tick=0; $tick -lt 12; $tick++) {
@@ -26,8 +26,12 @@ foreach ($size in $sizes) {
     $graphics.FillEllipse([Drawing.Brushes]::DarkOrange,121,121,14,14)
     $stream = New-Object IO.MemoryStream
     $bitmap.Save($stream,[Drawing.Imaging.ImageFormat]::Png)
+    if ($size -eq 256) {
+        [IO.Directory]::CreateDirectory((Join-Path $root 'docs')) | Out-Null
+        $bitmap.Save((Join-Path $root 'docs\icon.png'),[Drawing.Imaging.ImageFormat]::Png)
+    }
     $images += ,$stream.ToArray()
-    $stream.Dispose(); $pen.Dispose(); $face.Dispose(); $second.Dispose(); $path.Dispose(); $graphics.Dispose(); $bitmap.Dispose()
+    $stream.Dispose(); $pen.Dispose(); $second.Dispose(); $graphics.Dispose(); $bitmap.Dispose()
 }
 $file = [IO.File]::Create((Join-Path $root 'assets\app.ico'))
 $writer = New-Object IO.BinaryWriter($file)

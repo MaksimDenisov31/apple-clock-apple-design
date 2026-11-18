@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -6,7 +6,7 @@ using System.Windows;
 
 [assembly: AssemblyTitle("Apple Clock — Apple Design")]
 [assembly: AssemblyProduct("Apple Clock")]
-[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyVersion("1.0.2.0")]
 namespace AppleClock
 {
     public static class Program
@@ -53,3 +53,4 @@ namespace AppleClock
         }
     }
 }
+
