@@ -15,9 +15,9 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher=Максим Денисов
-AppPublisherURL=https://github.com/MaksimDenisovRussia/apple-clock-apple-design
-AppSupportURL=https://github.com/MaksimDenisovRussia/apple-clock-apple-design/issues
-AppUpdatesURL=https://github.com/MaksimDenisovRussia/apple-clock-apple-design/releases
+AppPublisherURL=https://github.com/MaksimDenisov31/apple-clock-apple-design
+AppSupportURL=https://github.com/MaksimDenisov31/apple-clock-apple-design/issues
+AppUpdatesURL=https://github.com/MaksimDenisov31/apple-clock-apple-design/releases
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 DisableWelcomePage=no
@@ -67,7 +67,7 @@ Source: "..\docs\preview-dark.png"; DestDir: "{app}\docs"; Flags: ignoreversion
 
 [Icons]
 Name: "{userprograms}\{#AppName}\Apple Clock"; Filename: "{app}\AppleClock.exe"; WorkingDir: "{app}"
-Name: "{userprograms}\{#AppName}\Инструкция"; Filename: "https://github.com/MaksimDenisovRussia/apple-clock-apple-design#readme"
+Name: "{userprograms}\{#AppName}\Инструкция"; Filename: "https://github.com/MaksimDenisov31/apple-clock-apple-design#readme"
 Name: "{userdesktop}\{#AppName}"; Filename: "{app}\AppleClock.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]

@@ -8,9 +8,9 @@
 
 ## Скачать
 
-- **[Установщик AppleClock-Setup-1.0.8.exe](https://github.com/MaksimDenisovRussia/apple-clock-apple-design/releases/download/v1.0.8/AppleClock-Setup-1.0.8.exe)** — установка для текущего пользователя, меню «Пуск», необязательный ярлык рабочего стола и обычное удаление через параметры Windows.
-- **[Переносная версия AppleClock-Portable-1.0.8.zip](https://github.com/MaksimDenisovRussia/apple-clock-apple-design/releases/download/v1.0.8/AppleClock-Portable-1.0.8.zip)** — распакуйте всю папку и запустите `AppleClock.exe`. Установка не нужна.
-- [Все выпуски и контрольные суммы](https://github.com/MaksimDenisovRussia/apple-clock-apple-design/releases).
+- **[Установщик AppleClock-Setup-1.0.8.exe](https://github.com/MaksimDenisov31/apple-clock-apple-design/releases/download/v1.0.8/AppleClock-Setup-1.0.8.exe)** — установка для текущего пользователя, меню «Пуск», необязательный ярлык рабочего стола и обычное удаление через параметры Windows.
+- **[Переносная версия AppleClock-Portable-1.0.8.zip](https://github.com/MaksimDenisov31/apple-clock-apple-design/releases/download/v1.0.8/AppleClock-Portable-1.0.8.zip)** — распакуйте всю папку и запустите `AppleClock.exe`. Установка не нужна.
+- [Все выпуски и контрольные суммы](https://github.com/MaksimDenisov31/apple-clock-apple-design/releases).
 
 Нужны **Windows 10/11 и .NET Framework 4.8**. Не нужны .NET SDK, Node.js и интернет для работы. Установщик проверяет наличие .NET Framework. Приложение и установщик не подписаны цифровой подписью издателя.
 
