@@ -81,9 +81,28 @@ namespace AppleClock
             System.Windows.Automation.AutomationProperties.SetName(b, value); return b;
         }
         Border Card(UIElement child, Thickness padding) { return new Border { Child = child, Background = card, CornerRadius = new CornerRadius(18), Padding = padding, Margin = new Thickness(0, 0, 18, 18), BorderBrush = line, BorderThickness = new Thickness(1) }; }
+        void ConfigureScrollbars()
+        {
+            var resources = Application.Current.Resources;
+            resources["ClockScrollThumb"] = ColorBrush(Data.Dark ? "#77777E" : "#B2B2BA");
+            resources["ClockScrollHover"] = ColorBrush(Data.Dark ? "#A1A1A8" : "#85858D");
+            resources[typeof(System.Windows.Controls.Primitives.ScrollBar)] = (Style)System.Windows.Markup.XamlReader.Parse(@"<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='{x:Type ScrollBar}'>
+<Setter Property='Width' Value='12'/><Setter Property='Background' Value='Transparent'/><Setter Property='MinWidth' Value='0'/><Setter Property='MinHeight' Value='0'/>
+<Setter Property='Template'><Setter.Value><ControlTemplate TargetType='{x:Type ScrollBar}'>
+<Grid Background='Transparent'><Track x:Name='PART_Track' Orientation='{TemplateBinding Orientation}' Minimum='{TemplateBinding Minimum}' Maximum='{TemplateBinding Maximum}' ViewportSize='{TemplateBinding ViewportSize}' Value='{Binding Value,RelativeSource={RelativeSource TemplatedParent},Mode=TwoWay}' IsDirectionReversed='True'>
+<Track.DecreaseRepeatButton><RepeatButton x:Name='PageBefore' Command='{x:Static ScrollBar.PageUpCommand}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='Transparent'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
+<Track.IncreaseRepeatButton><RepeatButton x:Name='PageAfter' Command='{x:Static ScrollBar.PageDownCommand}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='Transparent'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton>
+<Track.Thumb><Thumb x:Name='RoundedThumb' MinHeight='28' Background='{DynamicResource ClockScrollThumb}'><Thumb.Template><ControlTemplate TargetType='Thumb'><Border x:Name='ThumbSurface' Background='{TemplateBinding Background}' CornerRadius='4' Margin='3,2'/><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='ThumbSurface' Property='Background' Value='{DynamicResource ClockScrollHover}'/></Trigger><Trigger Property='IsDragging' Value='True'><Setter TargetName='ThumbSurface' Property='Background' Value='{DynamicResource ClockScrollHover}'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+</Track></Grid>
+<ControlTemplate.Triggers><Trigger Property='Orientation' Value='Horizontal'><Setter TargetName='PART_Track' Property='IsDirectionReversed' Value='False'/><Setter TargetName='PageBefore' Property='Command' Value='{x:Static ScrollBar.PageLeftCommand}'/><Setter TargetName='PageAfter' Property='Command' Value='{x:Static ScrollBar.PageRightCommand}'/><Setter TargetName='RoundedThumb' Property='MinHeight' Value='0'/><Setter TargetName='RoundedThumb' Property='MinWidth' Value='28'/></Trigger></ControlTemplate.Triggers>
+</ControlTemplate></Setter.Value></Setter>
+<Style.Triggers><Trigger Property='Orientation' Value='Horizontal'><Setter Property='Width' Value='Auto'/><Setter Property='Height' Value='12'/></Trigger></Style.Triggers>
+</Style>");
+        }
         public void Build()
         {
             bg = ColorBrush(Data.Dark ? "#1C1C1E" : "#F5F5F7"); side = ColorBrush(Data.Dark ? "#262628" : "#ECECEF"); card = ColorBrush(Data.Dark ? "#2C2C2E" : "#FFFFFF"); ink = ColorBrush(Data.Dark ? "#F5F5F7" : "#1D1D1F"); secondary = ColorBrush(Data.Dark ? "#A1A1A6" : "#86868B"); line = ColorBrush(Data.Dark ? "#3A3A3C" : "#E9E9ED");
+            ConfigureScrollbars();
             Background = bg; Foreground = ink;
             shell = new Grid { Background = bg }; shell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(224) }); shell.ColumnDefinitions.Add(new ColumnDefinition());
             shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(60) }); shell.RowDefinitions.Add(new RowDefinition());
@@ -220,7 +239,7 @@ namespace AppleClock
             var stepMessage = Text("От 1 до 3600 секунд. Сейчас: " + Data.TimerStepSeconds + " с.", 12, secondary); stepMessage.Margin = new Thickness(0, 0, 0, 22);
             stepRow.Children.Add(Button("Применить шаг", delegate { int value; if (!int.TryParse(stepInput.Text, out value) || value < 1 || value > 3600) { stepMessage.Text = "Введите целое число от 1 до 3600 секунд."; stepMessage.Foreground = Brushes.IndianRed; return; } Data.TimerStepSeconds = value; Save(); stepMessage.Foreground = secondary; stepMessage.Text = "Шаг сохранён: " + value + " с."; })); panel.Children.Add(stepRow); panel.Children.Add(stepMessage);
             panel.Children.Add(Text("После сна истёкший таймер сработает при пробуждении. Часы не включают компьютер и не будят его. Будильник с опозданием более 10 минут пропускается. Секундомер работает до завершения приложения.", 13, secondary)); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Проверить звук", delegate { Notify("Apple Clock", "Так звучит ваш сигнал.", null); })); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Завершить приложение", delegate { Close(); })); body.Children.Add(Card(panel, new Thickness(26)));
-            body.Children.Add(Text("Apple Clock 1.0.6 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
+            body.Children.Add(Text("Apple Clock 1.0.7 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
         }
         void AddCheck(Panel parent, string label, bool value, Action<bool> change) { var check = new CheckBox { Content = label, IsChecked = value, Foreground = ink, FontSize = 15, Margin = new Thickness(0, 0, 0, 22) }; check.Checked += delegate { change(true); }; check.Unchecked += delegate { change(false); }; parent.Children.Add(check); }
         TextBox NumberBox(int value) { return new TextBox { Text = value.ToString(), Width = 60, MaxLength = 3, FontSize = 17, Padding = new Thickness(7), Background = card, Foreground = ink, BorderBrush = line, Margin = new Thickness(0, 0, 10, 0), VerticalContentAlignment = VerticalAlignment.Center }; }

@@ -1,4 +1,4 @@
-﻿#define AppVersion "1.0.6"
+﻿#define AppVersion "1.0.7"
 #ifdef InstallerTest
   #define AppName "Apple Clock Test " + InstallerTest
   #define AppId "AppleClock.InstallerTest." + InstallerTest
