@@ -199,19 +199,41 @@ namespace AppleClock
             AddCheck(panel, "Тёмная тема", Data.Dark, delegate(bool value) { Data.Dark = value; Save(); Build(); });
             AddCheck(panel, "Звуковой сигнал таймеров и будильников", Data.Sound, delegate(bool value) { Data.Sound = value; Save(); });
             panel.Children.Add(Text("После сна истёкший таймер сработает при пробуждении. Часы не включают компьютер и не будят его. Будильник с опозданием более 10 минут пропускается. Секундомер работает до завершения приложения.", 13, secondary)); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Проверить звук", delegate { Notify("Apple Clock", "Так звучит ваш сигнал.", null); })); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Завершить приложение", delegate { Close(); })); body.Children.Add(Card(panel, new Thickness(26)));
-            body.Children.Add(Text("Apple Clock 1.0.3 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
+            body.Children.Add(Text("Apple Clock 1.0.4 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
         }
         void AddCheck(Panel parent, string label, bool value, Action<bool> change) { var check = new CheckBox { Content = label, IsChecked = value, Foreground = ink, FontSize = 15, Margin = new Thickness(0, 0, 0, 22) }; check.Checked += delegate { change(true); }; check.Unchecked += delegate { change(false); }; parent.Children.Add(check); }
         TextBox NumberBox(int value) { return new TextBox { Text = value.ToString(), Width = 60, MaxLength = 3, FontSize = 17, Padding = new Thickness(7), Background = card, Foreground = ink, BorderBrush = line, Margin = new Thickness(0, 0, 10, 0), VerticalContentAlignment = VerticalAlignment.Center }; }
         Window Dialog(string name, out StackPanel fields)
         {
-            var dialog = new Window { Title = name, Owner = this, Width = 460, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize, Background = bg, Foreground = ink, FontFamily = FontFamily, ShowInTaskbar = false };
-            fields = new StackPanel { Margin = new Thickness(28) }; fields.Children.Add(Text(name, 25, ink)); fields.Children.Add(new Border { Height = 22 }); dialog.Content = fields; return dialog;
+            var dialog = new Window { Title = name, Owner = this, Width = 460, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, Background = bg, Foreground = ink, FontFamily = FontFamily, ShowInTaskbar = false };
+            System.Windows.Shell.WindowChrome.SetWindowChrome(dialog, new System.Windows.Shell.WindowChrome { CaptionHeight = 0, ResizeBorderThickness = new Thickness(0), GlassFrameThickness = new Thickness(0), CornerRadius = new CornerRadius(16) });
+            fields = new StackPanel { Margin = new Thickness(28) }; var heading = Text(name, 25, ink); heading.MouseLeftButtonDown += delegate { dialog.DragMove(); }; fields.Children.Add(heading); fields.Children.Add(new Border { Height = 22 }); dialog.Content = fields;
+            dialog.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Escape) { dialog.Close(); e.Handled = true; } }; return dialog;
         }
         TextBox Field(Panel panel, string caption, string value) { panel.Children.Add(Text(caption, 13, secondary)); var input = new TextBox { Text = value, Padding = new Thickness(10), Margin = new Thickness(0, 6, 0, 18), FontSize = 17, Background = card, Foreground = ink, BorderBrush = line, MaxLength = 100 }; panel.Children.Add(input); return input; }
+        TextBox TimerTimeField(Panel panel, double initial)
+        {
+            panel.Children.Add(Text("Время · ЧЧ:ММ:СС", 13, secondary));
+            var grid = new Grid(); grid.ColumnDefinitions.Add(new ColumnDefinition()); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(38) });
+            var input = new TextBox { Text = Duration(initial), Padding = new Thickness(10), FontSize = 17, Background = Brushes.Transparent, Foreground = ink, BorderThickness = new Thickness(0), MaxLength = 8, VerticalContentAlignment = VerticalAlignment.Center };
+            System.Windows.Automation.AutomationProperties.SetName(input, "Время таймера"); grid.Children.Add(input);
+            Action<int> step = delegate(int delta) { double seconds; if (!ParseDuration(input.Text, out seconds)) seconds = initial; input.Text = Duration(Math.Max(1, Math.Min(359999, seconds + delta))); };
+            var arrows = new StackPanel { Margin = new Thickness(2, 3, 4, 3), VerticalAlignment = VerticalAlignment.Center }; Grid.SetColumn(arrows, 1); grid.Children.Add(arrows);
+            foreach (int delta in new[] { 10, -10 })
+            {
+                int amount = delta; var arrow = Button(delta > 0 ? "Прибавить 10 секунд" : "Вычесть 10 секунд", delegate { step(amount); });
+                arrow.MinHeight = 0; arrow.Height = 21; arrow.Margin = new Thickness(0, 1, 0, 1); arrow.Background = line;
+                arrow.ToolTip = delta > 0 ? "+10 секунд" : "−10 секунд";
+                arrow.Content = new System.Windows.Shapes.Path { Data = Geometry.Parse(delta > 0 ? "M2,7 L7,2 12,7" : "M2,2 L7,7 12,2"), Stroke = ink, StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, Width = 12, Height = 7, Stretch = Stretch.Uniform };
+                var frame = new FrameworkElementFactory(typeof(Border)); frame.SetValue(Border.CornerRadiusProperty, new CornerRadius(5)); frame.SetValue(Border.BackgroundProperty, line);
+                var presenter = new FrameworkElementFactory(typeof(ContentPresenter)); presenter.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center); presenter.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); frame.AppendChild(presenter); arrow.Template = new ControlTemplate(typeof(Button)) { VisualTree = frame }; arrows.Children.Add(arrow);
+            }
+            input.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Up || e.Key == Key.Down) { step(e.Key == Key.Up ? 10 : -10); e.Handled = true; } };
+            panel.Children.Add(new Border { Child = grid, Background = card, BorderBrush = line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(9), Margin = new Thickness(0, 6, 0, 18) }); return input;
+        }
         void EditTimer(Countdown timer)
         {
-            StackPanel fields; var dialog = Dialog(timer == null ? "Новый таймер" : "Изменить таймер", out fields); var name = Field(fields, "Название", timer == null ? "Таймер" : timer.Name); var value = Field(fields, "Время · ЧЧ:ММ:СС", Duration(timer == null ? 300 : timer.Duration)); var error = Text("", 12, Brushes.IndianRed); fields.Children.Add(error);
+            StackPanel fields; var dialog = Dialog(timer == null ? "Новый таймер" : "Изменить таймер", out fields); var name = Field(fields, "Название", timer == null ? "Таймер" : timer.Name); var value = TimerTimeField(fields, timer == null ? 300 : timer.Duration); var error = Text("", 12, Brushes.IndianRed); fields.Children.Add(error);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal }; buttons.Children.Add(Button("Сохранить", delegate { double duration; if (!ParseDuration(value.Text, out duration)) { error.Text = "Введите время от 00:00:01 до 99:59:59."; return; } if (timer == null) { timer = new Countdown(); Data.Timers.Add(timer); } timer.Name = string.IsNullOrWhiteSpace(name.Text) ? "Таймер" : name.Text.Trim(); timer.Duration = duration; timer.Reset(); Save(); dialog.Close(); Build(); }, true));
             if (timer != null) buttons.Children.Add(Button("Удалить", delegate { Data.Timers.Remove(timer); Save(); dialog.Close(); Build(); })); buttons.Children.Add(Button("Отмена", delegate { dialog.Close(); })); fields.Children.Add(buttons); dialog.ShowDialog();
         }
@@ -222,7 +244,10 @@ namespace AppleClock
         }
         void AddCity()
         {
-            StackPanel fields; var dialog = Dialog("Добавить город", out fields); var search = Field(fields, "Поиск города", ""); var list = new ListBox { Height = 270, Background = card, Foreground = ink, BorderBrush = line, FontSize = 18, Margin = new Thickness(0, 0, 0, 20), DisplayMemberPath = "" }; Action populate = delegate { list.Items.Clear(); foreach (City c in City.Catalog.Where(x => x.Name.IndexOf(search.Text, StringComparison.CurrentCultureIgnoreCase) >= 0 && !Data.Cities.Any(y => y.Zone == x.Zone))) list.Items.Add(c.Name); if (list.Items.Count > 0) list.SelectedIndex = 0; }; search.TextChanged += delegate { populate(); }; populate(); fields.Children.Add(list); fields.Children.Add(Button("Добавить", delegate { if (list.SelectedItem == null) return; Data.Cities.Add(City.Catalog.First(x => x.Name == (string)list.SelectedItem)); Save(); dialog.Close(); Build(); }, true)); dialog.ShowDialog();
+            StackPanel fields; var dialog = Dialog("Добавить город", out fields); var search = Field(fields, "Поиск города", ""); var list = new ListBox { Height = 270, Background = card, Foreground = ink, BorderBrush = line, FontSize = 18, Margin = new Thickness(0, 0, 0, 20), DisplayMemberPath = "" }; Action populate = delegate { list.Items.Clear(); foreach (City c in City.Catalog.Where(x => x.Name.IndexOf(search.Text, StringComparison.CurrentCultureIgnoreCase) >= 0 && !Data.Cities.Any(y => y.Zone == x.Zone))) list.Items.Add(c.Name); if (list.Items.Count > 0) list.SelectedIndex = 0; }; search.TextChanged += delegate { populate(); }; populate(); fields.Children.Add(list);
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+            buttons.Children.Add(Button("Добавить", delegate { if (list.SelectedItem == null) return; Data.Cities.Add(City.Catalog.First(x => x.Name == (string)list.SelectedItem)); Save(); dialog.Close(); Build(); }, true));
+            buttons.Children.Add(Button("Отмена", delegate { dialog.Close(); })); fields.Children.Add(buttons); dialog.ShowDialog();
         }
         internal void Notify(string name, string message, Action snooze, Action stopped = null)
         {
@@ -231,5 +256,6 @@ namespace AppleClock
         }
     }
 }
+
 
 

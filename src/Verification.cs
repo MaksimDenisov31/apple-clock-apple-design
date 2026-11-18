@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -63,6 +64,11 @@ namespace AppleClock
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { Button found = FindButton(VisualTreeHelper.GetChild(root, i), label); if (found != null) return found; } return null;
         }
         static void Click(Window window, string label) { window.UpdateLayout(); var b = FindButton(window, label); if (b == null) throw new Exception("Button not found: " + label); b.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); window.UpdateLayout(); }
+        static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
+        {
+            var match = root as T; if (match != null) yield return match;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) foreach (var child in Descendants<T>(VisualTreeHelper.GetChild(root, i))) yield return child;
+        }
         static void InDialog(ClockWindow owner, Action<Window, StackPanel> action)
         {
             owner.Dispatcher.BeginInvoke(new Action(delegate {
@@ -84,8 +90,22 @@ namespace AppleClock
                 Directory.CreateDirectory("docs"); window.UpdateLayout(); Screenshot(window, "docs/preview-light.png");
                 Click(window, "Старт"); Check(window.Data.Timers[0].Running, "UI timer start"); Click(window, "Пауза"); Check(!window.Data.Timers[0].Running, "UI timer pause");
                 Click(window, "5 мин"); Check(window.Data.Timers.Count == 3 && window.Data.Timers[2].Running, "UI quick timer");
-                InDialog(window, delegate(Window d, StackPanel p) { var inputs = p.Children.OfType<TextBox>().ToArray(); inputs[0].Text = "Тестовый таймер"; inputs[1].Text = "00:60:00"; Click(d, "Сохранить"); Check(d.IsVisible && window.Data.Timers.Count == 3, "timer dialog rejects invalid input"); inputs[1].Text = "99:59:59"; Click(d, "Сохранить"); });
+                InDialog(window, delegate(Window d, StackPanel p) {
+                    var inputs = Descendants<TextBox>(p).ToArray();
+                    Check(d.WindowStyle == WindowStyle.None, "timer dialog has no native Windows caption or close button");
+                    Click(d, "Прибавить 10 секунд"); Check(inputs[1].Text == "00:05:10", "up arrow adds ten seconds");
+                    Click(d, "Вычесть 10 секунд"); Check(inputs[1].Text == "00:05:00", "down arrow subtracts ten seconds");
+                    inputs[1].Text = "00:00:55"; Click(d, "Прибавить 10 секунд"); Check(inputs[1].Text == "00:01:05", "step crosses minute boundary");
+                    inputs[1].Text = "00:59:55"; Click(d, "Прибавить 10 секунд"); Check(inputs[1].Text == "01:00:05", "step crosses hour boundary");
+                    inputs[1].Text = "00:00:01"; Click(d, "Вычесть 10 секунд"); Check(inputs[1].Text == "00:00:01", "step clamps at one second");
+                    inputs[1].Text = "99:59:59"; Click(d, "Прибавить 10 секунд"); Check(inputs[1].Text == "99:59:59", "step clamps at maximum duration");
+                    inputs[1].Text = "invalid"; Click(d, "Прибавить 10 секунд"); Check(inputs[1].Text == "00:05:10", "step recovers from invalid input");
+                    inputs[0].Text = "Тестовый таймер"; inputs[1].Text = "00:60:00"; Click(d, "Сохранить"); Check(d.IsVisible && window.Data.Timers.Count == 3, "timer dialog rejects invalid input"); inputs[1].Text = "99:59:59"; Click(d, "Сохранить");
+                });
                 Click(window, "+  Добавить"); Check(window.Data.Timers.Last().Name == "Тестовый таймер" && window.Data.Timers.Last().Duration == 359999, "UI create named timer");
+                double originalDuration = window.Data.Timers[0].Duration;
+                InDialog(window, delegate(Window d, StackPanel p) { Screenshot(d, "docs/preview-timer-editor.png"); Click(d, "Прибавить 10 секунд"); Click(d, "Отмена"); }); Click(window, "•••");
+                Check(window.Data.Timers[0].Duration == originalDuration, "cancel discards unsaved stepped duration");
                 InDialog(window, delegate(Window d, StackPanel p) { Click(d, "Удалить"); }); Click(window, "•••"); Check(window.Data.Timers.Count == 3, "UI delete timer");
                 window.Page = 1; window.Build();
                 InDialog(window, delegate(Window d, StackPanel p) { var inputs = p.Children.OfType<TextBox>().ToArray(); inputs[0].Text = "Проверка будильника"; inputs[1].Text = "25:00"; Click(d, "Сохранить"); Check(d.IsVisible && window.Data.Alarms.Count == 0, "alarm rejects invalid time"); inputs[1].Text = "08:45"; var days = p.Children.OfType<WrapPanel>().First().Children.OfType<CheckBox>().ToArray(); days[0].IsChecked = true; Click(d, "Сохранить"); });

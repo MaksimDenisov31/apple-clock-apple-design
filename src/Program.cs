@@ -6,7 +6,7 @@ using System.Windows;
 
 [assembly: AssemblyTitle("Apple Clock — Apple Design")]
 [assembly: AssemblyProduct("Apple Clock")]
-[assembly: AssemblyVersion("1.0.3.0")]
+[assembly: AssemblyVersion("1.0.4.0")]
 namespace AppleClock
 {
     public static class Program
@@ -53,5 +53,6 @@ namespace AppleClock
         }
     }
 }
+
 
 

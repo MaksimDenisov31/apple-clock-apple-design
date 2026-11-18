@@ -1,4 +1,4 @@
-﻿#define AppVersion "1.0.3"
+﻿#define AppVersion "1.0.4"
 #ifdef InstallerTest
   #define AppName "Apple Clock Test " + InstallerTest
   #define AppId "AppleClock.InstallerTest." + InstallerTest
@@ -87,6 +87,7 @@ begin
         ShellExec('open', 'https://dotnet.microsoft.com/download/dotnet-framework/net48', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
   end;
 end;
+
 
 
 
