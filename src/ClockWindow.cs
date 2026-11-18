@@ -115,9 +115,8 @@ namespace AppleClock
             shell = new Grid { Background = bg }; shell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(224) }); shell.ColumnDefinitions.Add(new ColumnDefinition());
             shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(60) }); shell.RowDefinitions.Add(new RowDefinition());
             var sidebar = new Border { Background = side }; Grid.SetRowSpan(sidebar, 2); shell.Children.Add(sidebar);
-            var traffic = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(22, 19, 0, 0), VerticalAlignment = VerticalAlignment.Top };
-            string[] colors = { "#FF5F57", "#FEBC2E", "#28C840" }; string[] labels = { "Закрыть", "Свернуть", "Развернуть" };
-            for (int i = 0; i < 3; i++) { int n = i; var dot = new Button { Width = 13, Height = 13, Margin = new Thickness(0, 0, 9, 0), Background = ColorBrush(colors[i]), BorderThickness = new Thickness(0), ToolTip = labels[i] }; var factory = new FrameworkElementFactory(typeof(Border)); factory.SetValue(Border.CornerRadiusProperty, new CornerRadius(7)); factory.SetValue(Border.BackgroundProperty, ColorBrush(colors[i])); dot.Template = new ControlTemplate(typeof(Button)) { VisualTree = factory }; dot.Click += delegate { if (n == 0) Close(); else if (n == 1) WindowState = WindowState.Minimized; else Maximize(); }; System.Windows.Automation.AutomationProperties.SetName(dot, labels[i]); traffic.Children.Add(dot); }
+            var traffic = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(15, 12, 0, 0), VerticalAlignment = VerticalAlignment.Top };
+            for (int i = 0; i < 3; i++) { int n = i; traffic.Children.Add(TrafficControls.Create(i,delegate { if(n==0)Close();else if(n==1)WindowState=WindowState.Minimized;else Maximize(); })); }
             shell.Children.Add(traffic);
             var sideContent = new DockPanel { Margin = new Thickness(14, 14, 14, 20) }; Grid.SetRow(sideContent, 1); shell.Children.Add(sideContent);
             var bottom = new StackPanel { Margin = new Thickness(10, 0, 0, 0) }; bottom.Children.Add(Text("APPLE CLOCK", 11, secondary)); localTime = Text("", 28, ink); System.Windows.Automation.AutomationProperties.SetName(localTime, "Текущее время"); bottom.Children.Add(localTime);

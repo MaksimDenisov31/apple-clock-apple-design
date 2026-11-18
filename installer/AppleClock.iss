@@ -1,4 +1,4 @@
-﻿#define AppVersion "1.0.8"
+﻿#define AppVersion "1.0.9"
 #ifdef InstallerTest
   #define AppName "Apple Clock Test " + InstallerTest
   #define AppId "AppleClock.InstallerTest." + InstallerTest
@@ -64,6 +64,10 @@ Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\SOUND-CREDITS.md"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "..\docs\preview-light.png"; DestDir: "{app}\docs"; Flags: ignoreversion
 Source: "..\docs\preview-dark.png"; DestDir: "{app}\docs"; Flags: ignoreversion
+
+Source: "..\docs\caption-close.png"; DestDir: "{app}\docs"; Flags: ignoreversion
+Source: "..\docs\caption-minimize.png"; DestDir: "{app}\docs"; Flags: ignoreversion
+Source: "..\docs\caption-maximize.png"; DestDir: "{app}\docs"; Flags: ignoreversion
 
 [Icons]
 Name: "{userprograms}\{#AppName}\Apple Clock"; Filename: "{app}\AppleClock.exe"; WorkingDir: "{app}"

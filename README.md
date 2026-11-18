@@ -1,5 +1,9 @@
 ﻿# Apple Clock — Apple Design
 
+В версии 1.0.9 кнопки окна работают как в Apple Player: при наведении на красном кружке появляется крестик, на жёлтом — минус, на зелёном — стрелочки разворачивания/восстановления. Без наведения символы скрыты; они также появляются при фокусе с клавиатуры. Светлая и тёмная темы поддерживаются.
+
+![Кнопки окна](docs/caption-maximize.png)
+
 Часы для Windows в стиле macOS: спокойный интерфейс, оранжевые кольца таймеров, скруглённые карточки, светлая и тёмная темы. Самостоятельное настольное приложение с русским интерфейсом.
 
 ![Apple Clock — светлая тема](docs/preview-light.png)
@@ -8,8 +12,8 @@
 
 ## Скачать
 
-- **[Установщик AppleClock-Setup-1.0.8.exe](https://github.com/MaksimDenisov31/apple-clock-apple-design/releases/download/v1.0.8/AppleClock-Setup-1.0.8.exe)** — установка для текущего пользователя, меню «Пуск», необязательный ярлык рабочего стола и обычное удаление через параметры Windows.
-- **[Переносная версия AppleClock-Portable-1.0.8.zip](https://github.com/MaksimDenisov31/apple-clock-apple-design/releases/download/v1.0.8/AppleClock-Portable-1.0.8.zip)** — распакуйте всю папку и запустите `AppleClock.exe`. Установка не нужна.
+- **[Установщик AppleClock-Setup-1.0.9.exe](https://github.com/MaksimDenisov31/apple-clock-apple-design/releases/download/v1.0.9/AppleClock-Setup-1.0.9.exe)** — установка для текущего пользователя, меню «Пуск», необязательный ярлык рабочего стола и обычное удаление через параметры Windows.
+- **[Переносная версия AppleClock-Portable-1.0.9.zip](https://github.com/MaksimDenisov31/apple-clock-apple-design/releases/download/v1.0.9/AppleClock-Portable-1.0.9.zip)** — распакуйте всю папку и запустите `AppleClock.exe`. Установка не нужна.
 - [Все выпуски и контрольные суммы](https://github.com/MaksimDenisov31/apple-clock-apple-design/releases).
 
 Нужны **Windows 10/11 и .NET Framework 4.8**. Не нужны .NET SDK, Node.js и интернет для работы. Установщик проверяет наличие .NET Framework. Приложение и установщик не подписаны цифровой подписью издателя.

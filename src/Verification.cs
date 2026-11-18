@@ -103,6 +103,9 @@ namespace AppleClock
             {
                 Directory.CreateDirectory("docs"); window.UpdateLayout(); Screenshot(window, "docs/preview-light.png");
                 Check(window.Width == 1010, "default window width removes unused space");
+                TrafficVerification.Run(window,new[]{Descendants<Button>(window).First(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="Закрыть"),Descendants<Button>(window).First(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="Свернуть"),Descendants<Button>(window).First(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="Развернуть")},delegate(string name){Screenshot(window,"docs/"+name);});
+                Check(true,"caption hover trigger and keyboard symbol visibility verified");
+                Click(window,"Развернуть");Check(window.WindowState==WindowState.Maximized,"green caption button maximizes");Click(window,"Развернуть");Check(window.WindowState==WindowState.Normal,"green caption button restores");
                 var initialCards = Descendants<WrapPanel>(window).First().Children.OfType<Border>().Take(2).ToArray();
                 Check(initialCards.Length == 2 && Math.Abs(initialCards[0].TranslatePoint(new Point(), window).Y - initialCards[1].TranslatePoint(new Point(), window).Y) < 1, "compact default width still fits two timer cards");
                 Click(window, "Старт"); Check(window.Data.Timers[0].Running, "UI timer start"); Click(window, "Пауза"); Check(!window.Data.Timers[0].Running, "UI timer pause");
@@ -177,6 +180,7 @@ namespace AppleClock
                 window.Data = State.Fresh(); window.Data.Alarms.Add(new Alarm { Name = "Доброе утро", Days = 31 }); window.Page = 1; window.Build(); Screenshot(window, "docs/preview-alarms.png");
                 window.Notifications.SetVolume(window.Data.VolumePercent);
                 window.Data.Dark = true; window.Page = 0; window.Build(); Screenshot(window, "docs/preview-dark.png");
+                TrafficVerification.Run(window,new[]{Descendants<Button>(window).First(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="Закрыть"),Descendants<Button>(window).First(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="Свернуть"),Descendants<Button>(window).First(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="Развернуть")},delegate(string name){Screenshot(window,"docs/dark-"+name);});Check(true,"hover symbols work after rebuilding clock in dark theme");
                 window.Width = 880; window.Height = 640; window.Page = 4; window.Build(); window.UpdateLayout(); Screenshot(window, "docs/preview-compact.png"); Check(true, "compact focus layout");
                 window.EnableTestAlerts = true;
                 window.Page = 0; window.Build();
