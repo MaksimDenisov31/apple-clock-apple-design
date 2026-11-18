@@ -16,18 +16,55 @@ namespace AppleClock
     internal sealed class AlarmNotifications : IDisposable
     {
         internal readonly List<AlarmPopup> Active = new List<AlarmPopup>();
-        readonly SoundPlayer player;
-        readonly Stream audio;
+        SoundPlayer player;
+        Stream audio;
+        readonly byte[] originalAudio;
+        internal int VolumePercent { get; private set; }
         readonly bool silentTest;
         bool playing, disposed;
         internal bool SoundActive { get { return playing; } }
         internal AlarmNotifications(bool silentTest)
         {
             this.silentTest = silentTest;
-            audio = Assembly.GetExecutingAssembly().GetManifestResourceStream("AppleClock.TimerChime");
-            if (audio == null) throw new InvalidDataException("Не найдена мелодия таймера.");
+            using (var resource = Assembly.GetExecutingAssembly().GetManifestResourceStream("AppleClock.TimerChime"))
+            {
+                if (resource == null) throw new InvalidDataException("Не найдена мелодия таймера.");
+                using (var buffer = new MemoryStream()) { resource.CopyTo(buffer); originalAudio = buffer.ToArray(); }
+            }
+            VolumePercent = 100; audio = new MemoryStream(originalAudio, false);
             player = new SoundPlayer(audio); player.Load();
         }
+        internal static byte[] ScalePcm(byte[] source, int volume)
+        {
+            if (volume < 0 || volume > 100) throw new ArgumentOutOfRangeException("volume");
+            byte[] result = (byte[])source.Clone(); bool pcm16 = false;
+            if (result.Length < 12 || System.Text.Encoding.ASCII.GetString(result, 0, 4) != "RIFF") throw new InvalidDataException("Ожидается WAV");
+            for (int offset = 12; offset + 8 <= result.Length; )
+            {
+                int length = BitConverter.ToInt32(result, offset + 4); int start = offset + 8;
+                if (length < 0 || length > result.Length - start) throw new InvalidDataException("Повреждён WAV");
+                string kind = System.Text.Encoding.ASCII.GetString(result, offset, 4);
+                if (kind == "fmt " && length >= 16) pcm16 = BitConverter.ToUInt16(result, start) == 1 && BitConverter.ToUInt16(result, start + 14) == 16;
+                if (kind == "data")
+                {
+                    if (!pcm16 || length % 2 != 0) throw new InvalidDataException("Ожидается PCM 16 бит");
+                    for (int i = start; i < start + length; i += 2) { short sample = (short)(BitConverter.ToInt16(result, i) * volume / 100); result[i] = (byte)(sample & 255); result[i + 1] = (byte)((sample >> 8) & 255); }
+                    return result;
+                }
+                offset = start + length + (length & 1);
+            }
+            throw new InvalidDataException("Не найдены аудиоданные WAV");
+        }
+        internal void SetVolume(int percent)
+        {
+            if (disposed) throw new ObjectDisposedException("AlarmNotifications");
+            if (percent == VolumePercent) return;
+            var nextAudio = new MemoryStream(ScalePcm(originalAudio, percent), false);
+            var nextPlayer = new SoundPlayer(nextAudio); nextPlayer.Load();
+            player.Stop(); player.Dispose(); audio.Dispose(); player = nextPlayer; audio = nextAudio;
+            VolumePercent = percent; playing = false; UpdateSound();
+        }
+        internal void SetSoundEnabled(bool enabled) { foreach (var popup in Active) popup.SoundEnabled = enabled; UpdateSound(); }
         internal AlarmPopup Show(string name, string message, bool sound, Brush background, Brush foreground, Brush secondary,
             ImageSource icon, Func<string, Action, bool, Button> button, Action stopped, Action snooze)
         {
@@ -44,7 +81,7 @@ namespace AppleClock
         }
         void UpdateSound()
         {
-            bool needed = Active.Exists(p => p.SoundEnabled);
+            bool needed = VolumePercent > 0 && Active.Exists(p => p.SoundEnabled);
             if (needed == playing) return;
             if (needed) { if (!silentTest) player.PlayLooping(); } else player.Stop();
             playing = needed;

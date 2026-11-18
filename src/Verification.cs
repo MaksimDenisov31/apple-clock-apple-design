@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -15,6 +15,7 @@ namespace AppleClock
     public static class Verification
     {
         [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr handle, uint command);
+        [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
         static bool Above(Window upper, Window lower)
         {
             IntPtr below = new System.Windows.Interop.WindowInteropHelper(lower).Handle;
@@ -45,15 +46,24 @@ namespace AppleClock
                 a.NextUtc = now.AddMinutes(5); Check(!a.Tick(now.AddMinutes(4)) && a.Tick(now.AddMinutes(5)), "snooze deadline");
                 var ny = City.Catalog.First(c => c.Name == "Нью-Йорк"); Check(ny.At(new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Utc)).Hour == 8 && ny.At(new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc)).Hour == 7, "world clock DST");
                 foreach (City c in City.Catalog) c.At(now); Check(true, "all city time zones available");
-                State s = State.Fresh(); s.Dark = true; s.FocusTask = "Проверка — часы"; s.Timers[0].Start(now); s.Alarms.Add(a); Check(Storage.Save(s), "atomic initial save"); s.FocusCompleted = 3; Check(Storage.Save(s), "atomic replacement save"); var loaded = Storage.Load(); Check(loaded.Dark && loaded.FocusTask == s.FocusTask && loaded.FocusCompleted == 3 && loaded.Timers[0].Running && loaded.Timers[0].DeadlineUtc == s.Timers[0].DeadlineUtc && loaded.Alarms.Count == 1, "restore settings timers alarms UTF-8");
+                State s = State.Fresh(); s.Dark = true; s.VolumePercent = 37; s.TimerStepSeconds = 25; s.FocusTask = "Проверка — часы"; s.Timers[0].Start(now); s.Alarms.Add(a); Check(Storage.Save(s), "atomic initial save"); s.FocusCompleted = 3; Check(Storage.Save(s), "atomic replacement save"); var loaded = Storage.Load(); Check(loaded.Dark && loaded.FocusTask == s.FocusTask && loaded.FocusCompleted == 3 && loaded.Timers[0].Running && loaded.Timers[0].DeadlineUtc == s.Timers[0].DeadlineUtc && loaded.Alarms.Count == 1, "restore settings timers alarms UTF-8");
+                Check(loaded.VolumePercent == 37 && loaded.TimerStepSeconds == 25, "volume and custom step persist");
                 string settingsPath = Path.Combine(Storage.DirectoryPath, "settings.xml");
                 File.WriteAllText(settingsPath, File.ReadAllText(settingsPath).Replace("</State>", "<Background>true</Background></State>"));
                 Check(Storage.Load().Dark && Storage.LastError.Length == 0 && typeof(State).GetField("Background") == null, "legacy tray setting ignored while preferences are restored");
+                File.WriteAllText(settingsPath, File.ReadAllText(settingsPath).Replace("<VolumePercent>37</VolumePercent>", "").Replace("<TimerStepSeconds>25</TimerStepSeconds>", ""));
+                loaded = Storage.Load(); Check(loaded.VolumePercent == 100 && loaded.TimerStepSeconds == 10 && loaded.Dark, "older settings receive volume and step defaults without losing preferences");
                 File.WriteAllText(settingsPath, "broken"); Check(Storage.Load().Timers.Count == 2 && Storage.LastError.Length > 0, "corrupt settings handled");
                 Check(ClockWindow.Duration(3661) == "01:01:01", "duration formatting");
                 double seconds;
                 Check(ClockWindow.ParseDuration("99:59:59", out seconds) && seconds == 359999 && ClockWindow.Duration(seconds) == "99:59:59", "timer duration supports 99 hours");
                 Check(!ClockWindow.ParseDuration("00:00:00", out seconds) && !ClockWindow.ParseDuration("00:60:00", out seconds) && !ClockWindow.ParseDuration("-1:00:00", out seconds), "invalid durations rejected");
+                using (var buffer = new MemoryStream()) {
+                    var writer = new BinaryWriter(buffer); writer.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); writer.Write(44); writer.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt ")); writer.Write(16); writer.Write((short)1); writer.Write((short)1); writer.Write(44100); writer.Write(88200); writer.Write((short)2); writer.Write((short)16); writer.Write(System.Text.Encoding.ASCII.GetBytes("data")); writer.Write(8); foreach (short sample in new short[] { 32767, -32768, 1000, -1000 }) writer.Write(sample); writer.Flush();
+                    byte[] full = buffer.ToArray(), half = AlarmNotifications.ScalePcm(full, 50), mute = AlarmNotifications.ScalePcm(full, 0);
+                    Check(full.SequenceEqual(AlarmNotifications.ScalePcm(full, 100)) && BitConverter.ToInt16(half, 44) == 16383 && BitConverter.ToInt16(half, 46) == -16384 && BitConverter.ToInt16(half, 48) == 500, "volume scales PCM amplitude without changing WAV header");
+                    Check(mute.Skip(44).All(b => b == 0) && full.Take(44).SequenceEqual(mute.Take(44)), "zero volume produces silent PCM while preserving format");
+                }
             }
             catch (Exception ex) { Check(false, ex.ToString()); }
             Directory.CreateDirectory("test-results"); File.WriteAllText("test-results/core.txt", report.ToString()); return Failed ? 1 : 0;
@@ -74,7 +84,7 @@ namespace AppleClock
             owner.Dispatcher.BeginInvoke(new Action(delegate {
                 var dialog = Application.Current.Windows.Cast<Window>().FirstOrDefault(x => x.Owner == owner);
                 if (dialog == null) { Check(false, "dialog opens"); return; }
-                try { dialog.UpdateLayout(); action(dialog, (StackPanel)dialog.Content); }
+                try { dialog.UpdateLayout(); action(dialog, (StackPanel)dialog.Tag); }
                 catch (Exception ex) { Check(false, ex.ToString()); }
                 finally { if (dialog.IsVisible) dialog.Close(); }
             }));
@@ -93,18 +103,25 @@ namespace AppleClock
                 InDialog(window, delegate(Window d, StackPanel p) {
                     var inputs = Descendants<TextBox>(p).ToArray();
                     Check(d.WindowStyle == WindowStyle.None, "timer dialog has no native Windows caption or close button");
-                    Click(d, "Прибавить 10 секунд"); Check(inputs[1].Text == "00:05:10", "up arrow adds ten seconds");
-                    Click(d, "Вычесть 10 секунд"); Check(inputs[1].Text == "00:05:00", "down arrow subtracts ten seconds");
-                    inputs[1].Text = "00:00:55"; Click(d, "Прибавить 10 секунд"); Check(inputs[1].Text == "00:01:05", "step crosses minute boundary");
-                    inputs[1].Text = "00:59:55"; Click(d, "Прибавить 10 секунд"); Check(inputs[1].Text == "01:00:05", "step crosses hour boundary");
-                    inputs[1].Text = "00:00:01"; Click(d, "Вычесть 10 секунд"); Check(inputs[1].Text == "00:00:01", "step clamps at one second");
-                    inputs[1].Text = "99:59:59"; Click(d, "Прибавить 10 секунд"); Check(inputs[1].Text == "99:59:59", "step clamps at maximum duration");
-                    inputs[1].Text = "invalid"; Click(d, "Прибавить 10 секунд"); Check(inputs[1].Text == "00:05:10", "step recovers from invalid input");
+                    Click(d, "Увеличить время"); Check(inputs[1].Text == "00:05:10", "up arrow adds ten seconds");
+                    Click(d, "Уменьшить время"); Check(inputs[1].Text == "00:05:00", "down arrow subtracts ten seconds");
+                    inputs[1].Text = "00:00:55"; Click(d, "Увеличить время"); Check(inputs[1].Text == "00:01:05", "step crosses minute boundary");
+                    inputs[1].Text = "00:59:55"; Click(d, "Увеличить время"); Check(inputs[1].Text == "01:00:05", "step crosses hour boundary");
+                    inputs[1].Text = "00:00:01"; Click(d, "Уменьшить время"); Check(inputs[1].Text == "00:00:01", "step clamps at one second");
+                    inputs[1].Text = "99:59:59"; Click(d, "Увеличить время"); Check(inputs[1].Text == "99:59:59", "step clamps at maximum duration");
+                    inputs[1].Text = "invalid"; Click(d, "Увеличить время"); Check(inputs[1].Text == "00:05:10", "step recovers from invalid input");
                     inputs[0].Text = "Тестовый таймер"; inputs[1].Text = "00:60:00"; Click(d, "Сохранить"); Check(d.IsVisible && window.Data.Timers.Count == 3, "timer dialog rejects invalid input"); inputs[1].Text = "99:59:59"; Click(d, "Сохранить");
                 });
                 Click(window, "+  Добавить"); Check(window.Data.Timers.Last().Name == "Тестовый таймер" && window.Data.Timers.Last().Duration == 359999, "UI create named timer");
                 double originalDuration = window.Data.Timers[0].Duration;
-                InDialog(window, delegate(Window d, StackPanel p) { Screenshot(d, "docs/preview-timer-editor.png"); Click(d, "Прибавить 10 секунд"); Click(d, "Отмена"); }); Click(window, "•••");
+                InDialog(window, delegate(Window d, StackPanel p) {
+                    Screenshot(d, "docs/preview-timer-editor.png");
+                    var frame = d.Content as Border; Check(frame != null && frame.BorderThickness.Left == 1 && frame.Effect is System.Windows.Media.Effects.DropShadowEffect, "dialog has a visible border and drop shadow");
+                    var header = Descendants<Border>(d).First(x => System.Windows.Automation.AutomationProperties.GetName(x) == "Переместить окно");
+                    Point screen = header.PointToScreen(new Point(header.ActualWidth / 2, header.ActualHeight / 2)); long packed = ((long)(int)screen.X & 65535) | (((long)(int)screen.Y & 65535) << 16);
+                    Check(SendMessage(new System.Windows.Interop.WindowInteropHelper(d).Handle, 0x0084, IntPtr.Zero, new IntPtr(packed)).ToInt64() == 2, "dialog header uses native draggable caption hit testing");
+                    Click(d, "Увеличить время"); Click(d, "Отмена");
+                }); Click(window, "•••");
                 Check(window.Data.Timers[0].Duration == originalDuration, "cancel discards unsaved stepped duration");
                 InDialog(window, delegate(Window d, StackPanel p) { Click(d, "Удалить"); }); Click(window, "•••"); Check(window.Data.Timers.Count == 3, "UI delete timer");
                 window.Page = 1; window.Build();
@@ -116,7 +133,20 @@ namespace AppleClock
                 window.Page = 4; window.Build(); Click(window, "Начать"); Check(window.Data.Focus.Running, "UI focus start"); window.Data.Focus.DeadlineUtc = DateTime.UtcNow.AddSeconds(-1); window.Tick(); Check(window.Data.OnBreak && window.Data.FocusCompleted == 1 && window.Data.Focus.Duration == 300, "focus completion switches to break");
                 window.Data.Focus.Start(DateTime.UtcNow); window.Data.Focus.DeadlineUtc = DateTime.UtcNow.AddSeconds(-1); window.Tick(); Check(!window.Data.OnBreak && window.Data.Focus.Duration == 1500, "break completion switches to focus");
                 for (int i = 0; i < 6; i++) { window.Page = i; window.Build(); window.UpdateLayout(); Check(true, "render page " + i); }
+                window.Page = 5; window.Build(); window.UpdateLayout();
+                var volumeControl = Descendants<Slider>(window).Single(); volumeControl.Value = 35;
+                Check(window.Data.VolumePercent == 35 && window.Notifications.VolumePercent == 35 && Storage.Load().VolumePercent == 35, "settings volume slider updates app audio and persists immediately");
+                var stepControl = Descendants<TextBox>(window).First(x => System.Windows.Automation.AutomationProperties.GetName(x) == "Шаг времени в секундах"); stepControl.Text = "25"; Click(window, "Применить шаг");
+                Check(window.Data.TimerStepSeconds == 25 && Storage.Load().TimerStepSeconds == 25, "custom timer step saves from settings");
+                stepControl.Text = "0"; Click(window, "Применить шаг"); Check(window.Data.TimerStepSeconds == 25, "invalid timer step cannot overwrite saved setting");
+                stepControl.Text = "25"; Click(window, "Применить шаг"); Screenshot(window, "docs/preview-settings.png");
+                window.Page = 0; window.Build();
+                double beforeCustomStep = window.Data.Timers[0].Duration;
+                InDialog(window, delegate(Window d, StackPanel p) { var input = Descendants<TextBox>(p).Last(); Click(d, "Увеличить время"); Check(input.Text == ClockWindow.Duration(beforeCustomStep + 25), "timer arrow uses saved custom step"); Click(d, "Уменьшить время"); Check(input.Text == ClockWindow.Duration(beforeCustomStep), "custom step works in both directions"); Click(d, "Отмена"); }); Click(window, "•••");
+                var clock = Descendants<TextBlock>(window).First(x => System.Windows.Automation.AutomationProperties.GetName(x) == "Текущее время"); var date = Descendants<TextBlock>(window).First(x => System.Windows.Automation.AutomationProperties.GetName(x) == "Текущая дата");
+                Check(clock.Text.Length == 8 && clock.Text[2] == ':' && clock.Text[5] == ':' && date.Text == DateTime.Now.ToString("ddd, d MMMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("ru-RU")), "sidebar displays seconds and the current local date");
                 window.Data = State.Fresh(); window.Data.Alarms.Add(new Alarm { Name = "Доброе утро", Days = 31 }); window.Page = 1; window.Build(); Screenshot(window, "docs/preview-alarms.png");
+                window.Notifications.SetVolume(window.Data.VolumePercent);
                 window.Data.Dark = true; window.Page = 0; window.Build(); Screenshot(window, "docs/preview-dark.png");
                 window.Width = 880; window.Height = 640; window.Page = 4; window.Build(); window.UpdateLayout(); Screenshot(window, "docs/preview-compact.png"); Check(true, "compact focus layout");
                 window.EnableTestAlerts = true;
@@ -125,6 +155,8 @@ namespace AppleClock
                 window.Tick();
                 var alert = window.Notifications.Active.Single(); alert.UpdateLayout();
                 Check(alert.Topmost && alert.IsVisible && alert.WindowStyle == WindowStyle.None && window.Notifications.SoundActive, "timer creates persistent topmost alert with looping chime");
+                window.Notifications.SetVolume(0); Check(window.Notifications.Active.Count == 1 && !window.Notifications.SoundActive, "zero volume mutes an active alert without dismissing it");
+                window.Notifications.SetVolume(50); Check(window.Notifications.SoundActive && window.Notifications.VolumePercent == 50, "changing volume applies to an active alert");
                 Check(expired.Remaining == 0 && !expired.Running, "expired timer waits for acknowledgement before reset");
                 alert.Close(); Check(alert.IsVisible && window.Notifications.Active.Count == 1 && window.Notifications.SoundActive, "Alt F4 and taskbar close do not dismiss or silence alert");
                 alert.WindowState = WindowState.Minimized; Check(alert.WindowState == WindowState.Normal, "alert resists minimization");
@@ -170,3 +202,4 @@ namespace AppleClock
         }
     }
 }
+

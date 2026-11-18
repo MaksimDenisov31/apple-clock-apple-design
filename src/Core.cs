@@ -61,6 +61,7 @@ namespace AppleClock
     public class State
     {
         public bool Dark, Sound = true;
+        public int VolumePercent = 100, TimerStepSeconds = 10;
         public int FocusMinutes = 25, BreakMinutes = 5, FocusCompleted;
         public string FocusDay = "", FocusTask = "";
         public bool OnBreak;
@@ -83,6 +84,7 @@ namespace AppleClock
         }
         static void Validate(State s)
         {
+            if (s.VolumePercent < 0 || s.VolumePercent > 100 || s.TimerStepSeconds < 1 || s.TimerStepSeconds > 3600) throw new InvalidDataException("Некорректная громкость или шаг времени");
             if (s.Timers == null || s.Alarms == null || s.Cities == null || s.Focus == null || s.FocusMinutes < 1 || s.FocusMinutes > 180 || s.BreakMinutes < 1 || s.BreakMinutes > 60) throw new InvalidDataException("Некорректные настройки");
             foreach (Countdown t in s.Timers) if (t.Duration < 1 || t.Duration > 359999 || double.IsNaN(t.Duration) || double.IsNaN(t.Remaining) || t.Remaining < 0 || t.Remaining > t.Duration) throw new InvalidDataException("Некорректный таймер");
             foreach (Alarm a in s.Alarms) if (a.Hour < 0 || a.Hour > 23 || a.Minute < 0 || a.Minute > 59 || a.Days < 0 || a.Days > 127) throw new InvalidDataException("Некорректный будильник");

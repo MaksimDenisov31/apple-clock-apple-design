@@ -36,7 +36,7 @@ namespace AppleClock
         readonly HashSet<Countdown> ringingTimers = new HashSet<Countdown>();
         Grid shell;
         StackPanel navigation, body;
-        TextBlock title, subtitle, localTime;
+        TextBlock title, subtitle, localTime, localDate;
         readonly List<Action> refresh = new List<Action>();
         readonly Stopwatch stopwatch = new Stopwatch();
         readonly List<TimeSpan> laps = new List<TimeSpan>();
@@ -62,6 +62,7 @@ namespace AppleClock
             System.Windows.Shell.WindowChrome.SetWindowChrome(this, chrome);
             using (var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("AppleClock.Icon")) Icon = System.Windows.Media.Imaging.BitmapFrame.Create(stream, System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
             Notifications = new AlarmNotifications(testing);
+            Notifications.SetVolume(Data.VolumePercent);
             Build();
             ticker.Tick += delegate { Tick(); }; ticker.Start();
             Closing += delegate { Save(); };
@@ -92,7 +93,8 @@ namespace AppleClock
             for (int i = 0; i < 3; i++) { int n = i; var dot = new Button { Width = 13, Height = 13, Margin = new Thickness(0, 0, 9, 0), Background = ColorBrush(colors[i]), BorderThickness = new Thickness(0), ToolTip = labels[i] }; var factory = new FrameworkElementFactory(typeof(Border)); factory.SetValue(Border.CornerRadiusProperty, new CornerRadius(7)); factory.SetValue(Border.BackgroundProperty, ColorBrush(colors[i])); dot.Template = new ControlTemplate(typeof(Button)) { VisualTree = factory }; dot.Click += delegate { if (n == 0) Close(); else if (n == 1) WindowState = WindowState.Minimized; else Maximize(); }; System.Windows.Automation.AutomationProperties.SetName(dot, labels[i]); traffic.Children.Add(dot); }
             shell.Children.Add(traffic);
             var sideContent = new DockPanel { Margin = new Thickness(14, 14, 14, 20) }; Grid.SetRow(sideContent, 1); shell.Children.Add(sideContent);
-            var bottom = new StackPanel { Margin = new Thickness(10, 0, 0, 0) }; bottom.Children.Add(Text("APPLE CLOCK", 11, secondary)); localTime = Text("", 28, ink); bottom.Children.Add(localTime); bottom.Children.Add(Text("Время для важного.", 12, secondary)); DockPanel.SetDock(bottom, Dock.Bottom); sideContent.Children.Add(bottom);
+            var bottom = new StackPanel { Margin = new Thickness(10, 0, 0, 0) }; bottom.Children.Add(Text("APPLE CLOCK", 11, secondary)); localTime = Text("", 28, ink); System.Windows.Automation.AutomationProperties.SetName(localTime, "Текущее время"); bottom.Children.Add(localTime);
+            localDate = Text("", 12, secondary); localDate.Margin = new Thickness(0, 3, 0, 5); System.Windows.Automation.AutomationProperties.SetName(localDate, "Текущая дата"); bottom.Children.Add(localDate); bottom.Children.Add(Text("Время для важного.", 12, secondary)); DockPanel.SetDock(bottom, Dock.Bottom); sideContent.Children.Add(bottom);
             navigation = new StackPanel(); navigation.Children.Add(Text("   Часы", 25, ink)); navigation.Children.Add(new Border { Height = 25 });
             for (int i = 0; i < pages.Length; i++)
             {
@@ -131,7 +133,7 @@ namespace AppleClock
             if (Data.Focus.Tick(now)) { bool wasBreak = Data.OnBreak; if (!wasBreak) Data.FocusCompleted++; Data.OnBreak = !wasBreak; Data.Focus.Duration = (Data.OnBreak ? Data.BreakMinutes : Data.FocusMinutes) * 60; Data.Focus.Reset(); Notify("Фокусировка", wasBreak ? "Перерыв завершён. Можно вернуться к делу." : "Отличная работа. Время сделать перерыв.", null); changed = true; }
             Refresh(); if (changed || now - lastSave > TimeSpan.FromSeconds(15)) { Save(); lastSave = now; }
         }
-        void Refresh() { if (localTime != null) localTime.Text = DateTime.Now.ToString("HH:mm"); foreach (Action action in refresh.ToArray()) action(); }
+        void Refresh() { var now = DateTime.Now; if (localTime != null) localTime.Text = now.ToString("HH:mm:ss"); if (localDate != null) localDate.Text = now.ToString("ddd, d MMMM yyyy", CultureInfo.GetCultureInfo("ru-RU")); foreach (Action action in refresh.ToArray()) action(); }
         public static string Duration(double seconds) { var value = TimeSpan.FromSeconds(Math.Ceiling(Math.Max(0, seconds))); return ((int)value.TotalHours).ToString("00") + ":" + value.Minutes.ToString("00") + ":" + value.Seconds.ToString("00"); }
         public static bool ParseDuration(string text, out double seconds)
         {
@@ -197,17 +199,44 @@ namespace AppleClock
         {
             var panel = new StackPanel(); panel.Children.Add(Text("Оформление и работа", 21, ink)); panel.Children.Add(new Border { Height = 18 });
             AddCheck(panel, "Тёмная тема", Data.Dark, delegate(bool value) { Data.Dark = value; Save(); Build(); });
-            AddCheck(panel, "Звуковой сигнал таймеров и будильников", Data.Sound, delegate(bool value) { Data.Sound = value; Save(); });
+            AddCheck(panel, "Звуковой сигнал таймеров и будильников", Data.Sound, delegate(bool value) { Data.Sound = value; Notifications.SetSoundEnabled(value); Save(); });
+            var volumeRow = new DockPanel { Margin = new Thickness(0, 0, 0, 8) }; var percentage = Text(Data.VolumePercent + "%", 15, ink); percentage.MinWidth = 48; percentage.TextAlignment = TextAlignment.Right; DockPanel.SetDock(percentage, Dock.Right); volumeRow.Children.Add(percentage); volumeRow.Children.Add(Text("Громкость мелодии", 15, ink)); panel.Children.Add(volumeRow);
+            var volume = new Slider { Minimum = 0, Maximum = 100, Value = Data.VolumePercent, TickFrequency = 1, IsSnapToTickEnabled = true, SmallChange = 1, LargeChange = 10, Margin = new Thickness(0, 0, 0, 18) }; System.Windows.Automation.AutomationProperties.SetName(volume, "Громкость мелодии");
+            volume.Resources["VolumeAccent"] = blue; volume.Resources["VolumeTrack"] = line;
+            volume.Template = (ControlTemplate)System.Windows.Markup.XamlReader.Parse(@"<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='{x:Type Slider}'>
+<Grid Height='26' Background='Transparent'><Track x:Name='PART_Track' Minimum='{TemplateBinding Minimum}' Maximum='{TemplateBinding Maximum}' Value='{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}'>
+<Track.DecreaseRepeatButton><RepeatButton Command='{x:Static Slider.DecreaseLarge}'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Height='5' CornerRadius='2.5' Background='{DynamicResource VolumeAccent}'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
+<Track.IncreaseRepeatButton><RepeatButton Command='{x:Static Slider.IncreaseLarge}'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Height='5' CornerRadius='2.5' Background='{DynamicResource VolumeTrack}'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton>
+<Track.Thumb><Thumb Width='20' Height='20'><Thumb.Template><ControlTemplate TargetType='Thumb'><Border Background='White' BorderBrush='#B8B8C0' BorderThickness='1' CornerRadius='10'><Border.Effect><DropShadowEffect BlurRadius='4' ShadowDepth='1' Opacity='.18'/></Border.Effect></Border></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+</Track></Grid></ControlTemplate>");
+            volume.ValueChanged += delegate { Data.VolumePercent = (int)Math.Round(volume.Value); percentage.Text = Data.VolumePercent + "%"; Notifications.SetVolume(Data.VolumePercent); Save(); }; panel.Children.Add(volume);
+            panel.Children.Add(Text("Шаг стрелок времени, в секундах", 15, ink));
+            var stepRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 6) }; var stepInput = NumberBox(Data.TimerStepSeconds); stepInput.Width = 90; stepInput.MaxLength = 4; System.Windows.Automation.AutomationProperties.SetName(stepInput, "Шаг времени в секундах"); stepRow.Children.Add(stepInput);
+            var stepMessage = Text("От 1 до 3600 секунд. Сейчас: " + Data.TimerStepSeconds + " с.", 12, secondary); stepMessage.Margin = new Thickness(0, 0, 0, 22);
+            stepRow.Children.Add(Button("Применить шаг", delegate { int value; if (!int.TryParse(stepInput.Text, out value) || value < 1 || value > 3600) { stepMessage.Text = "Введите целое число от 1 до 3600 секунд."; stepMessage.Foreground = Brushes.IndianRed; return; } Data.TimerStepSeconds = value; Save(); stepMessage.Foreground = secondary; stepMessage.Text = "Шаг сохранён: " + value + " с."; })); panel.Children.Add(stepRow); panel.Children.Add(stepMessage);
             panel.Children.Add(Text("После сна истёкший таймер сработает при пробуждении. Часы не включают компьютер и не будят его. Будильник с опозданием более 10 минут пропускается. Секундомер работает до завершения приложения.", 13, secondary)); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Проверить звук", delegate { Notify("Apple Clock", "Так звучит ваш сигнал.", null); })); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Завершить приложение", delegate { Close(); })); body.Children.Add(Card(panel, new Thickness(26)));
-            body.Children.Add(Text("Apple Clock 1.0.4 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
+            body.Children.Add(Text("Apple Clock 1.0.5 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
         }
         void AddCheck(Panel parent, string label, bool value, Action<bool> change) { var check = new CheckBox { Content = label, IsChecked = value, Foreground = ink, FontSize = 15, Margin = new Thickness(0, 0, 0, 22) }; check.Checked += delegate { change(true); }; check.Unchecked += delegate { change(false); }; parent.Children.Add(check); }
         TextBox NumberBox(int value) { return new TextBox { Text = value.ToString(), Width = 60, MaxLength = 3, FontSize = 17, Padding = new Thickness(7), Background = card, Foreground = ink, BorderBrush = line, Margin = new Thickness(0, 0, 10, 0), VerticalContentAlignment = VerticalAlignment.Center }; }
         Window Dialog(string name, out StackPanel fields)
         {
-            var dialog = new Window { Title = name, Owner = this, Width = 460, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, Background = bg, Foreground = ink, FontFamily = FontFamily, ShowInTaskbar = false };
-            System.Windows.Shell.WindowChrome.SetWindowChrome(dialog, new System.Windows.Shell.WindowChrome { CaptionHeight = 0, ResizeBorderThickness = new Thickness(0), GlassFrameThickness = new Thickness(0), CornerRadius = new CornerRadius(16) });
-            fields = new StackPanel { Margin = new Thickness(28) }; var heading = Text(name, 25, ink); heading.MouseLeftButtonDown += delegate { dialog.DragMove(); }; fields.Children.Add(heading); fields.Children.Add(new Border { Height = 22 }); dialog.Content = fields;
+            var dialog = new Window { Title = name, Owner = this, Width = 492, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, AllowsTransparency = true, Background = Brushes.Transparent, Foreground = ink, FontFamily = FontFamily, ShowInTaskbar = false };
+            var surface = new DockPanel(); var headerContent = new Grid { Height = 42, Margin = new Thickness(18, 0, 18, 0) }; headerContent.Children.Add(Text("APPLE CLOCK", 11, secondary)); var dragHint = Text("⠿  Перетащите окно", 12, secondary); dragHint.HorizontalAlignment = HorizontalAlignment.Right; headerContent.Children.Add(dragHint);
+            var header = new Border { Child = headerContent, Background = side, CornerRadius = new CornerRadius(13, 13, 0, 0), Cursor = Cursors.SizeAll }; System.Windows.Automation.AutomationProperties.SetName(header, "Переместить окно"); header.MouseLeftButtonDown += delegate { dialog.DragMove(); }; DockPanel.SetDock(header, Dock.Top); surface.Children.Add(header);
+            fields = new StackPanel { Margin = new Thickness(28, 22, 28, 28) }; var heading = Text(name, 25, ink); heading.MouseLeftButtonDown += delegate { dialog.DragMove(); }; fields.Children.Add(heading); fields.Children.Add(new Border { Height = 22 }); surface.Children.Add(fields); dialog.Tag = fields;
+            var frame = new Border { Child = surface, Background = card, BorderBrush = ColorBrush(Data.Dark ? "#737378" : "#B8B8C0"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14), Margin = new Thickness(16), Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 22, ShadowDepth = 5, Opacity = .28, Color = Colors.Black } };
+            dialog.Content = frame;
+            dialog.SourceInitialized += delegate {
+                var source = System.Windows.Interop.HwndSource.FromHwnd(new System.Windows.Interop.WindowInteropHelper(dialog).Handle);
+                source.AddHook(delegate(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled) {
+                    if (message == 0x0084 && header.IsArrangeValid) {
+                        long packed = lParam.ToInt64(); var point = header.PointFromScreen(new Point((short)(packed & 65535), (short)((packed >> 16) & 65535)));
+                        if (point.X >= 0 && point.X < header.ActualWidth && point.Y >= 0 && point.Y < header.ActualHeight) { handled = true; return new IntPtr(2); }
+                    }
+                    return IntPtr.Zero;
+                });
+            };
             dialog.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Escape) { dialog.Close(); e.Handled = true; } }; return dialog;
         }
         TextBox Field(Panel panel, string caption, string value) { panel.Children.Add(Text(caption, 13, secondary)); var input = new TextBox { Text = value, Padding = new Thickness(10), Margin = new Thickness(0, 6, 0, 18), FontSize = 17, Background = card, Foreground = ink, BorderBrush = line, MaxLength = 100 }; panel.Children.Add(input); return input; }
@@ -217,18 +246,18 @@ namespace AppleClock
             var grid = new Grid(); grid.ColumnDefinitions.Add(new ColumnDefinition()); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(38) });
             var input = new TextBox { Text = Duration(initial), Padding = new Thickness(10), FontSize = 17, Background = Brushes.Transparent, Foreground = ink, BorderThickness = new Thickness(0), MaxLength = 8, VerticalContentAlignment = VerticalAlignment.Center };
             System.Windows.Automation.AutomationProperties.SetName(input, "Время таймера"); grid.Children.Add(input);
-            Action<int> step = delegate(int delta) { double seconds; if (!ParseDuration(input.Text, out seconds)) seconds = initial; input.Text = Duration(Math.Max(1, Math.Min(359999, seconds + delta))); };
+            Action<int> step = delegate(int direction) { double seconds; if (!ParseDuration(input.Text, out seconds)) seconds = initial; input.Text = Duration(Math.Max(1, Math.Min(359999, seconds + direction * Data.TimerStepSeconds))); };
             var arrows = new StackPanel { Margin = new Thickness(2, 3, 4, 3), VerticalAlignment = VerticalAlignment.Center }; Grid.SetColumn(arrows, 1); grid.Children.Add(arrows);
-            foreach (int delta in new[] { 10, -10 })
+            foreach (int delta in new[] { 1, -1 })
             {
-                int amount = delta; var arrow = Button(delta > 0 ? "Прибавить 10 секунд" : "Вычесть 10 секунд", delegate { step(amount); });
+                int amount = delta; var arrow = Button(delta > 0 ? "Увеличить время" : "Уменьшить время", delegate { step(amount); });
                 arrow.MinHeight = 0; arrow.Height = 21; arrow.Margin = new Thickness(0, 1, 0, 1); arrow.Background = line;
-                arrow.ToolTip = delta > 0 ? "+10 секунд" : "−10 секунд";
+                arrow.ToolTip = (delta > 0 ? "+" : "−") + Data.TimerStepSeconds + " с";
                 arrow.Content = new System.Windows.Shapes.Path { Data = Geometry.Parse(delta > 0 ? "M2,7 L7,2 12,7" : "M2,2 L7,7 12,2"), Stroke = ink, StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, Width = 12, Height = 7, Stretch = Stretch.Uniform };
                 var frame = new FrameworkElementFactory(typeof(Border)); frame.SetValue(Border.CornerRadiusProperty, new CornerRadius(5)); frame.SetValue(Border.BackgroundProperty, line);
                 var presenter = new FrameworkElementFactory(typeof(ContentPresenter)); presenter.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center); presenter.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); frame.AppendChild(presenter); arrow.Template = new ControlTemplate(typeof(Button)) { VisualTree = frame }; arrows.Children.Add(arrow);
             }
-            input.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Up || e.Key == Key.Down) { step(e.Key == Key.Up ? 10 : -10); e.Handled = true; } };
+            input.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Up || e.Key == Key.Down) { step(e.Key == Key.Up ? 1 : -1); e.Handled = true; } };
             panel.Children.Add(new Border { Child = grid, Background = card, BorderBrush = line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(9), Margin = new Thickness(0, 6, 0, 18) }); return input;
         }
         void EditTimer(Countdown timer)
@@ -256,6 +285,3 @@ namespace AppleClock
         }
     }
 }
-
-
-
