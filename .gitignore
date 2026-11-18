@@ -1,0 +1,6 @@
+.tools/
+test-results/
+installer-output/
+*.log
+*.user
+.env*
