@@ -13,13 +13,72 @@ namespace AppleClock
 {
     public class Dial : FrameworkElement
     {
-        public double Progress = 1;
+        Countdown countdown;
+        bool rendering;
+        TimeSpan lastFrame = TimeSpan.MinValue;
+        double lastDrawnProgress = double.NaN;
+        DateTime clockAnchorUtc, observedDeadline;
+        long clockAnchorTicks;
+        bool observedRunning;
+        internal long RenderCount { get; private set; }
+        internal long ProgressChangeCount { get; private set; }
+        internal bool IsAnimating { get { return rendering; } }
         public Brush Accent = Brushes.Orange, Track = Brushes.LightGray;
+        public Dial()
+        {
+            Loaded += delegate { UpdateRendering(); };
+            IsVisibleChanged += delegate { UpdateRendering(); };
+            Unloaded += delegate { StopRendering(); };
+        }
+        internal static double ProgressAt(Countdown source, DateTime utc)
+        {
+            if (source == null || source.Duration <= 0) return 0;
+            double remaining = source.Running ? (source.DeadlineUtc - utc).TotalSeconds : source.Remaining;
+            return Math.Max(0, Math.Min(1, remaining / source.Duration));
+        }
+        internal void Update(Countdown source)
+        {
+            bool changed = !Object.ReferenceEquals(countdown, source);
+            DateTime now = DateTime.UtcNow;
+            if (changed || source == null || source.DeadlineUtc != observedDeadline || source.Running != observedRunning || Math.Abs((SmoothUtcNow() - now).TotalSeconds) > .1)
+            {
+                clockAnchorUtc = now; clockAnchorTicks = Stopwatch.GetTimestamp();
+                observedDeadline = source == null ? DateTime.MinValue : source.DeadlineUtc; observedRunning = source != null && source.Running;
+            }
+            countdown = source; UpdateRendering();
+            if (changed || (!rendering && ProgressAt(countdown, DateTime.UtcNow) != lastDrawnProgress)) InvalidateVisual();
+        }
+        DateTime SmoothUtcNow()
+        {
+            if (clockAnchorTicks == 0) return DateTime.UtcNow;
+            return clockAnchorUtc.AddSeconds((Stopwatch.GetTimestamp() - clockAnchorTicks) / (double)Stopwatch.Frequency);
+        }
+        void UpdateRendering()
+        {
+            var host = Window.GetWindow(this);
+            bool needed = IsLoaded && IsVisible && countdown != null && countdown.Running && (host == null || host.WindowState != WindowState.Minimized);
+            if (!needed) { StopRendering(); return; }
+            if (rendering) return;
+            lastFrame = TimeSpan.MinValue; CompositionTarget.Rendering += OnFrame; rendering = true;
+        }
+        void StopRendering()
+        {
+            if (!rendering) return;
+            CompositionTarget.Rendering -= OnFrame; rendering = false;
+        }
+        void OnFrame(object sender, EventArgs e)
+        {
+            if (!IsVisible || countdown == null || !countdown.Running) { StopRendering(); return; }
+            var frame = (RenderingEventArgs)e;
+            if (frame.RenderingTime == lastFrame) return;
+            lastFrame = frame.RenderingTime; InvalidateVisual();
+        }
         protected override void OnRender(DrawingContext dc)
         {
+            RenderCount++;
             double r = Math.Max(1, Math.Min(ActualWidth, ActualHeight) / 2 - 10); Point c = new Point(ActualWidth / 2, ActualHeight / 2);
             dc.DrawEllipse(null, new Pen(Track, 7), c, r, r);
-            double p = Math.Max(0, Math.Min(1, Progress)); if (p <= 0) return;
+            double p = ProgressAt(countdown, SmoothUtcNow()); if (p != lastDrawnProgress) ProgressChangeCount++; lastDrawnProgress = p; if (p <= 0) return;
             if (p >= .99999) { dc.DrawEllipse(null, new Pen(Accent, 7), c, r, r); return; }
             double angle = p * Math.PI * 2; var geometry = new StreamGeometry();
             using (var context = geometry.Open()) { context.BeginFigure(new Point(c.X, c.Y - r), false, false); context.ArcTo(new Point(c.X + Math.Sin(angle) * r, c.Y - Math.Cos(angle) * r), new Size(r, r), 0, p > .5, SweepDirection.Clockwise, true, false); }
@@ -186,7 +245,7 @@ namespace AppleClock
                 var ringGrid = new Grid { Width = 242, Height = 242, Margin = new Thickness(0, 20, 0, 20) }; var ring = new Dial { Accent = orange, Track = line }; ringGrid.Children.Add(ring);
                 var center = new StackPanel { VerticalAlignment = VerticalAlignment.Center }; var time = Text("", 38, ink); time.FontWeight = FontWeights.Light; time.HorizontalAlignment = HorizontalAlignment.Center; center.Children.Add(time); var status = Text("", 12, secondary); status.HorizontalAlignment = HorizontalAlignment.Center; status.Margin = new Thickness(0, 8, 0, 0); center.Children.Add(status); ringGrid.Children.Add(center); stack.Children.Add(ringGrid);
                 var controls = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center }; controls.Children.Add(Button("Сбросить", delegate { t.Reset(); Save(); Refresh(); })); var toggle = Button("", delegate { if (t.Running) t.Pause(DateTime.UtcNow); else t.Start(DateTime.UtcNow); Save(); Refresh(); }, true); controls.Children.Add(toggle); stack.Children.Add(controls);
-                refresh.Add(delegate { time.Text = Duration(t.Remaining); status.Text = t.Running ? "Осталось" : (t.Remaining <= 0 ? "Время вышло" : "Готов к запуску"); toggle.Content = t.Running ? "Пауза" : "Старт"; controls.IsEnabled = !ringingTimers.Contains(t); edit.IsEnabled = !ringingTimers.Contains(t); ring.Progress = t.Remaining / t.Duration; ring.InvalidateVisual(); }); cards.Children.Add(Card(stack, new Thickness(24)));
+                refresh.Add(delegate { time.Text = Duration(t.Remaining); status.Text = t.Running ? "Осталось" : (t.Remaining <= 0 ? "Время вышло" : "Готов к запуску"); toggle.Content = t.Running ? "Пауза" : "Старт"; controls.IsEnabled = !ringingTimers.Contains(t); edit.IsEnabled = !ringingTimers.Contains(t); ring.Update(t); }); cards.Children.Add(Card(stack, new Thickness(24)));
             }
             if (Data.Timers.Count == 0) body.Children.Add(Text("Добавьте таймер или выберите время быстрого старта.", 16, secondary));
             body.Children.Add(Text("Таймер продолжит отсчёт, пока вы занимаетесь своими делами.", 12, secondary));
@@ -227,7 +286,7 @@ namespace AppleClock
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center }; buttons.Children.Add(Button("Сбросить", delegate { Data.Focus.Reset(); Save(); Refresh(); })); var toggle = Button("", delegate { if (Data.Focus.Running) Data.Focus.Pause(DateTime.UtcNow); else Data.Focus.Start(DateTime.UtcNow); Save(); Refresh(); }, true); buttons.Children.Add(toggle); panel.Children.Add(buttons);
             var completed = Text("", 15, secondary); completed.HorizontalAlignment = HorizontalAlignment.Center; completed.Margin = new Thickness(0, 22, 0, 26); panel.Children.Add(completed);
             var intervals = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center }; intervals.Children.Add(Text("Фокус, мин  ", 14, secondary)); var work = NumberBox(Data.FocusMinutes); intervals.Children.Add(work); intervals.Children.Add(Text("    Перерыв, мин  ", 14, secondary)); var rest = NumberBox(Data.BreakMinutes); intervals.Children.Add(rest); intervals.Children.Add(Button("Применить", delegate { int w, r; if (!int.TryParse(work.Text, out w) || !int.TryParse(rest.Text, out r) || w < 1 || w > 180 || r < 1 || r > 60) { MessageBox.Show(this, "Фокус: 1–180 минут. Перерыв: 1–60 минут."); return; } Data.FocusMinutes = w; Data.BreakMinutes = r; Data.Focus.Duration = (Data.OnBreak ? r : w) * 60; Data.Focus.Reset(); Save(); Refresh(); })); panel.Children.Add(intervals);
-            refresh.Add(delegate { caption.Text = Data.OnBreak ? "Перерыв" : "Время сосредоточиться"; time.Text = Duration(Data.Focus.Remaining); toggle.Content = Data.Focus.Running ? "Пауза" : "Начать"; ring.Progress = Data.Focus.Remaining / Data.Focus.Duration; ring.InvalidateVisual(); completed.Text = "Завершено сегодня: " + Data.FocusCompleted + " сессий"; }); body.Children.Add(Card(panel, new Thickness(28)));
+            refresh.Add(delegate { caption.Text = Data.OnBreak ? "Перерыв" : "Время сосредоточиться"; time.Text = Duration(Data.Focus.Remaining); toggle.Content = Data.Focus.Running ? "Пауза" : "Начать"; ring.Update(Data.Focus); completed.Text = "Завершено сегодня: " + Data.FocusCompleted + " сессий"; }); body.Children.Add(Card(panel, new Thickness(28)));
         }
         void Settings()
         {
@@ -254,7 +313,7 @@ namespace AppleClock
             var stepMessage = Text("От 1 до 3600 секунд. Сейчас: " + Data.TimerStepSeconds + " с.", 12, secondary); stepMessage.Margin = new Thickness(0, 0, 0, 22);
             stepRow.Children.Add(Button("Применить шаг", delegate { int value; if (!int.TryParse(stepInput.Text, out value) || value < 1 || value > 3600) { stepMessage.Text = "Введите целое число от 1 до 3600 секунд."; stepMessage.Foreground = Brushes.IndianRed; return; } Data.TimerStepSeconds = value; Save(); stepMessage.Foreground = secondary; stepMessage.Text = "Шаг сохранён: " + value + " с."; })); panel.Children.Add(stepRow); panel.Children.Add(stepMessage);
             panel.Children.Add(Text("После сна истёкший таймер сработает при пробуждении. Часы не включают компьютер и не будят его. Будильник с опозданием более 10 минут пропускается. Секундомер работает до завершения приложения.", 13, secondary)); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Проверить звук", delegate { Notify("Apple Clock", "Так звучит ваш сигнал.", null); })); panel.Children.Add(new Border { Height = 20 }); panel.Children.Add(Button("Завершить приложение", delegate { Close(); })); body.Children.Add(Card(panel, new Thickness(26)));
-            body.Children.Add(Text("Apple Clock 1.0.8 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
+            body.Children.Add(Text("Apple Clock 1.0.10 · Apple Design\nСамостоятельное приложение для Windows. Не связано с Apple или Microsoft.\nНастройки хранятся только на вашем компьютере.", 13, secondary));
         }
         void AddCheck(Panel parent, string label, bool value, Action<bool> change) { var check = new CheckBox { Content = label, IsChecked = value, Foreground = ink, FontSize = 15, Margin = new Thickness(0, 0, 0, 22) }; check.Checked += delegate { change(true); }; check.Unchecked += delegate { change(false); }; parent.Children.Add(check); }
         TextBox NumberBox(int value) { return new TextBox { Text = value.ToString(), Width = 60, MaxLength = 3, FontSize = 17, Padding = new Thickness(7), Background = card, Foreground = ink, BorderBrush = line, Margin = new Thickness(0, 0, 10, 0), VerticalContentAlignment = VerticalAlignment.Center }; }
